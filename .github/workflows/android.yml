@@ -44,3 +44,9 @@ jobs:
 
     - name: Build TalkBack
       run: ./build.sh
+
+    - name: Archive build artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: outputs
+        path: ./build/outputs/
