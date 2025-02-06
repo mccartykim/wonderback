@@ -32,7 +32,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y wget unzip
-        wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip -O android-sdk.zip
+        wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O android-sdk.zip
         unzip android-sdk.zip -d $ANDROID_SDK_ROOT
         yes | $ANDROID_SDK_ROOT/tools/bin/sdkmanager --licenses
         $ANDROID_SDK_ROOT/tools/bin/sdkmanager "platform-tools" "platforms;android-29"
