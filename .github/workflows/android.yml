@@ -1,24 +1,41 @@
-name: Android CI
+name: Build
 
 on:
   push:
-    branches: [ "master" ]
+    branches:
+      - main
   pull_request:
-    branches: [ "master" ]
+    branches:
+      - main
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
+    env:
+      JAVA_HOME: /usr/lib/jvm/java-11-openjdk-amd64
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
-    - uses: actions/checkout@v4
-    - name: set up JDK 11
-      uses: actions/setup-java@v4
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Set up JDK 11
+      uses: actions/setup-java@v2
       with:
         java-version: '11'
-        distribution: 'temurin'
-        cache: gradle
-        
-    - name: Build with Gradle
+
+    - name: Install Android SDK
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget unzip
+        wget https://dl.google.com/android/repository/sdk-tools-linux-4333796.zip -O android-sdk.zip
+        unzip android-sdk.zip -d $ANDROID_SDK_ROOT
+        yes | $ANDROID_SDK_ROOT/tools/bin/sdkmanager --licenses
+        $ANDROID_SDK_ROOT/tools/bin/sdkmanager "platform-tools" "platforms;android-29"
+
+    - name: Grant execute permission for build script
+      run: chmod +x ./build.sh
+
+    - name: Build TalkBack
       run: ./build.sh
