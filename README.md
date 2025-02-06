@@ -1,3 +1,7 @@
+This is a hobbyhorse fork for my silly idea to try putting a Model Context Protocol server inside of TalkBack, so we can see if a model can navigate an app with just the text Talkback would read and a few human gestures.
+
+Talkback stuff:
+
 # Introduction
 
 This repository contains source code for Google's TalkBack, which is a screen
