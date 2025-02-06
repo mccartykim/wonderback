@@ -34,8 +34,8 @@ jobs:
         sudo apt-get install -y wget unzip
         wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O android-sdk.zip
         unzip android-sdk.zip
-        mkdir $ANDROID_SDK_ROOT/cmdline-tools/latest
-        mv -p cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
+        mkdir -p $ANDROID_SDK_ROOT/cmdline-tools/latest
+        mv cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
         yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
         $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-29"
 
