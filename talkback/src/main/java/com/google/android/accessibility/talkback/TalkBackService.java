@@ -659,6 +659,8 @@ public class TalkBackService extends AccessibilityService
   private NodeMenuRuleProcessor nodeMenuRuleProcessor;
   private PrimesController primesController;
   private SpeechLanguage speechLanguage;
+  /** TalkBack Agent for accessibility analysis. */
+  private com.google.android.accessibility.talkback.agent.AgentManager agentManager;
   private ImageCaptioner imageCaptioner;
   private TalkBackExitController talkBackExitController;
 
@@ -765,6 +767,10 @@ public class TalkBackService extends AccessibilityService
     final long turningOffTime = System.currentTimeMillis();
     interruptAllFeedback(/* stopTtsSpeechCompletely= */ false);
     storeTalkBackUserUsage();
+    // Shut down TalkBack Agent
+    if (agentManager != null) {
+      agentManager.shutdown();
+    }
     if (pipeline != null) {
       pipeline.onUnbind(calculateFinalAnnouncementVolume(), disableTalkBackCompleteAction);
     }
@@ -1435,6 +1441,15 @@ public class TalkBackService extends AccessibilityService
     Intent intent = new Intent(INTENT_TALKBACK_ENABLED);
     intent.setPackage(getPackageName());
     sendBroadcast(intent);
+
+    // Initialize TalkBack Agent subsystem for accessibility analysis
+    try {
+      agentManager =
+          com.google.android.accessibility.talkback.agent.AgentManager.getInstance(this);
+      agentManager.initialize();
+    } catch (Exception e) {
+      LogUtils.e(TAG, "Failed to initialize AgentManager: %s", e.getMessage());
+    }
 
     primesController.stopTimer(TimerAction.START_UP);
   }

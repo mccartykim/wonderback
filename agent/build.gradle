@@ -1,0 +1,28 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply from: "../shared.gradle"
+
+dependencies {
+    implementation project(':utils')
+    implementation project(':talkback')
+
+    // Networking
+    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+
+    // JSON
+    implementation 'com.google.code.gson:gson:2.10.1'
+
+    // mDNS/NSD is built into Android SDK (android.net.nsd)
+
+    // Coroutines
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4'
+
+    // Kotlin stdlib
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.8.0"
+}
+
+android {
+    defaultConfig {
+        buildConfigField("String", "APPLICATION_ID", '"' + talkbackApplicationId + '"')
+    }
+}

@@ -7,6 +7,7 @@ dependencies {
     implementation project(':brailleime')
     implementation project(':brailleinterfaces')
     implementation project(':brailledisplay')
+    implementation project(':agent')
 }
 
 android {

@@ -10,6 +10,7 @@ final BUILD_TIMESTAMP = new Date().format('yyyy_MM_dd_HHmm')
 
 dependencies {
     implementation project(':talkback')
+    implementation project(':agent')
 }
 
 buildscript {

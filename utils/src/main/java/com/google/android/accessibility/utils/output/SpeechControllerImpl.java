@@ -249,6 +249,40 @@ public class SpeechControllerImpl implements SpeechController {
   /** Records whether should silence speech */
   private boolean sourceIsVolumeControl = false;
 
+  // ============ Agent capture hook ============
+
+  /**
+   * Listener interface for intercepting speech output.
+   * Used by the agent module to capture utterances for accessibility analysis.
+   */
+  public interface SpeechInterceptListener {
+    /**
+     * Called when TalkBack is about to speak text.
+     *
+     * @param text The text being spoken
+     * @param queueMode The TTS queue mode
+     * @param flags The feedback item flags
+     * @return true to suppress TTS output (silent capture mode), false to allow normal speech
+     */
+    boolean onSpeechIntercepted(CharSequence text, int queueMode, int flags);
+  }
+
+  /** Static listener for agent speech capture. Set from the agent module. */
+  private static volatile SpeechInterceptListener sSpeechInterceptListener = null;
+
+  /**
+   * Register a listener to intercept all speech output.
+   * Only one listener is supported at a time (the agent).
+   */
+  public static void setSpeechInterceptListener(@Nullable SpeechInterceptListener listener) {
+    sSpeechInterceptListener = listener;
+  }
+
+  /** Get the currently registered speech intercept listener. */
+  public static @Nullable SpeechInterceptListener getSpeechInterceptListener() {
+    return sSpeechInterceptListener;
+  }
+
   public SpeechControllerImpl(
       Context context, Delegate delegate, FeedbackController feedbackController) {
     this(
@@ -888,6 +922,20 @@ public class SpeechControllerImpl implements SpeechController {
       if ((flags & FeedbackItem.FLAG_ADVANCE_CONTINUOUS_READING) != 0) {
         tryNotifyFullScreenReaderCallback();
       }
+      return;
+    }
+
+    // Agent capture hook: intercept speech for accessibility analysis.
+    // If the listener returns true, TTS output is suppressed (silent capture mode).
+    boolean suppressTts = false;
+    SpeechInterceptListener interceptListener = sSpeechInterceptListener;
+    if (interceptListener != null && !TextUtils.isEmpty(text)) {
+      suppressTts = interceptListener.onSpeechIntercepted(text, queueMode, flags);
+    }
+
+    if (suppressTts) {
+      // In silent mode, still process earcons and haptics but skip TTS
+      LogUtils.v(TAG, "Agent captured speech (TTS suppressed): %s", text);
       return;
     }
 
