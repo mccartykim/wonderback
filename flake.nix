@@ -4,25 +4,36 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    android-nixpkgs = {
-      url = "github:nickcao/nix-android";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, android-nixpkgs, ... }:
+  outputs = { self, nixpkgs, flake-utils, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
+        pkgs = import nixpkgs {
+          inherit system;
+          config = {
+            allowUnfree = true;
+            android_sdk.accept_license = true;
+          };
+        };
 
-        # Android SDK configuration
-        androidSdk = android-nixpkgs.packages.${system}.androidsdk (sdkPkgs: with sdkPkgs; [
-          build-tools-34-0-0
-          cmdline-tools-latest
-          platform-tools
-          platforms-android-34
-          ndk-21-4-7075529
-        ]);
+        # Android SDK via nixpkgs built-in androidenv.
+        # composeAndroidPackages lets us pick exactly what we need.
+        androidComposition = pkgs.androidenv.composeAndroidPackages {
+          buildToolsVersions = [ "34.0.0" ];
+          platformVersions = [ "34" ];
+          includeNDK = true;
+          ndkVersions = [ "21.4.7075529" ];
+          includeEmulator = false;
+          includeSystemImages = false;
+          includeSources = false;
+        };
+
+        androidSdk = androidComposition.androidsdk;
+
+        # Gradle 7.6.6 — matches what build.sh downloads (7.6.4).
+        # AGP 7.2.2 requires Gradle 7.3.3+; gradle_7 is 7.6.6.
+        gradle = pkgs.gradle_7;
 
         # Python environment for the analysis server
         pythonEnv = pkgs.python312.withPackages (ps: with ps; [
@@ -31,40 +42,32 @@
           pydantic
           pyyaml
           pytest
-          httpx        # needed by TestClient
-          websockets   # needed by FastAPI WebSocket
-          anyio        # async test support
+          httpx
+          websockets
+          anyio
           pytest-asyncio
-          # ollama and zeroconf: install via pip in venv if needed
-          # (ollama has binary deps, zeroconf needs ifaddr)
         ]);
 
       in {
         devShells.default = pkgs.mkShell {
           name = "talkback-agent";
 
-          buildInputs = with pkgs; [
-            # Android build
+          buildInputs = [
             androidSdk
-            jdk17
+            pkgs.jdk17
             gradle
-
-            # Python server
             pythonEnv
-            python312Packages.pip
-
-            # Development tools
-            git
-            curl
-            jq
-
-            # Beads (task management)
-            go
+            pkgs.python312Packages.pip
+            pkgs.git
+            pkgs.curl
+            pkgs.jq
+            pkgs.go
           ];
 
           shellHook = ''
             export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
             export ANDROID_SDK_ROOT="$ANDROID_HOME"
+            export ANDROID_SDK="$ANDROID_HOME"
             export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/21.4.7075529"
             export JAVA_HOME="${pkgs.jdk17}"
             export PATH="$ANDROID_HOME/platform-tools:$PATH"
@@ -84,102 +87,132 @@
             echo "Python:      $(python3 --version)"
             echo ""
             echo "Workflows:"
-            echo "  ./build.sh                     Full Android build + Python tests"
-            echo "  ./build.sh --android-only      Just Gradle build"
-            echo "  ./build.sh --server-only       Just Python tests"
-            echo "  cd server && python main.py    Start analysis server"
-            echo "  adb reverse tcp:8080 tcp:8080  Forward port for ADB connection"
+            echo "  nix run .#build                Build Android APK"
+            echo "  nix run .#build -- --check     Compile check only (faster)"
+            echo "  nix run .#test-server          Run Python server tests"
+            echo "  nix run .#server               Start analysis server"
+            echo "  nix run .#setup-adb            ADB reverse port forwarding"
             echo "  bd --no-db list                Check beads task status"
           '';
         };
 
-        # Server package — run the analysis server
-        packages.server = pkgs.writeShellApplication {
-          name = "talkback-agent-server";
-          runtimeInputs = [ pythonEnv ];
-          text = ''
-            # Find server dir relative to script invocation or use REPO_ROOT
-            SERVER_DIR="''${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/server"
-            if [ ! -f "$SERVER_DIR/main.py" ]; then
-              echo "Error: Cannot find server/main.py. Run from the repo root or set REPO_ROOT."
-              exit 1
-            fi
-            cd "$SERVER_DIR"
+        packages = {
+          # Wrap build.sh with Nix-provided JDK + Android SDK.
+          # This replaces build.sh's wget-gradle-from-internet approach
+          # with a hermetic Nix-provided toolchain.
+          build = pkgs.writeShellApplication {
+            name = "talkback-agent-build";
+            runtimeInputs = [ androidSdk pkgs.jdk17 gradle pkgs.coreutils pkgs.findutils pkgs.gnused ];
+            text = ''
+              REPO="''${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+              cd "$REPO"
 
-            # Install pip-only deps if needed
-            if ! python -c "import ollama" 2>/dev/null; then
-              echo "Installing ollama + zeroconf..."
-              pip install --quiet ollama zeroconf 2>/dev/null || true
-            fi
+              export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
+              export ANDROID_SDK_ROOT="$ANDROID_HOME"
+              export ANDROID_SDK="$ANDROID_HOME"
+              export JAVA_HOME="${pkgs.jdk17}"
 
-            exec python main.py "$@"
-          '';
-        };
+              echo "sdk.dir=$ANDROID_HOME" > local.properties
 
-        # Run Python server tests
-        packages.test-server = pkgs.writeShellApplication {
-          name = "talkback-agent-test-server";
-          runtimeInputs = [ pythonEnv ];
-          text = ''
-            SERVER_DIR="''${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/server"
-            cd "$SERVER_DIR"
-            exec python -m pytest test_server.py -v "$@"
-          '';
-        };
+              echo "TalkBack Agent Build"
+              echo "===================="
+              echo "Java:    $(java -version 2>&1 | head -1)"
+              echo "Gradle:  $(gradle --version | grep '^Gradle')"
+              echo "SDK:     $ANDROID_HOME"
+              echo ""
 
-        # Quick ADB setup for device connection
-        packages.setup-adb = pkgs.writeShellApplication {
-          name = "talkback-agent-setup";
-          runtimeInputs = with pkgs; [ androidSdk ];
-          text = ''
-            PORT="''${1:-8080}"
-            echo "Setting up ADB reverse port forwarding on port $PORT..."
-            adb reverse "tcp:$PORT" "tcp:$PORT"
-            echo "Done! Android device will connect to localhost:$PORT"
-            echo "which tunnels to this machine's port $PORT over USB."
-          '';
-        };
+              MODE="''${1:---full}"
+              case "$MODE" in
+                --check)
+                  echo "=== Compile check (no APK) ==="
+                  gradle compilePhoneDebugKotlin compilePhoneDebugJavaWithJavac \
+                    --no-daemon --warning-mode all
+                  ;;
+                --full|*)
+                  echo "=== assemblePhoneDebug ==="
+                  gradle assemblePhoneDebug --no-daemon --warning-mode all
+                  echo ""
+                  echo "APKs:"
+                  find . -name "*.apk" -newer local.properties
+                  ;;
+              esac
+            '';
+          };
 
-        # Full dev build: compile Android + run Python tests
-        packages.dev-build = pkgs.writeShellApplication {
-          name = "talkback-agent-dev-build";
-          runtimeInputs = with pkgs; [ androidSdk jdk17 gradle pythonEnv git ];
-          text = ''
-            REPO="''${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-            cd "$REPO"
+          # Run the analysis server
+          server = pkgs.writeShellApplication {
+            name = "talkback-agent-server";
+            runtimeInputs = [ pythonEnv pkgs.git ];
+            text = ''
+              SERVER_DIR="''${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/server"
+              if [ ! -f "$SERVER_DIR/main.py" ]; then
+                echo "Error: Cannot find server/main.py. Run from the repo root or set REPO_ROOT."
+                exit 1
+              fi
+              cd "$SERVER_DIR"
 
-            export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
-            export ANDROID_SDK_ROOT="$ANDROID_HOME"
-            export JAVA_HOME="${pkgs.jdk17}"
+              # Install pip-only deps if needed (ollama has native bindings)
+              if ! python -c "import ollama" 2>/dev/null; then
+                echo "Installing ollama + zeroconf via pip..."
+                pip install --quiet ollama zeroconf 2>/dev/null || true
+              fi
 
-            # Ensure local.properties
-            echo "sdk.dir=$ANDROID_HOME" > local.properties
+              exec python main.py "$@"
+            '';
+          };
 
-            echo "=== Android Build ==="
-            echo "Java: $(java -version 2>&1 | head -1)"
-            echo "SDK:  $ANDROID_HOME"
+          # Run Python server tests
+          test-server = pkgs.writeShellApplication {
+            name = "talkback-agent-test-server";
+            runtimeInputs = [ pythonEnv pkgs.git ];
+            text = ''
+              SERVER_DIR="''${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/server"
+              cd "$SERVER_DIR"
+              exec python -m pytest test_server.py -v "$@"
+            '';
+          };
 
-            MODE="''${1:---full}"
-            case "$MODE" in
-              --check)
-                gradle compilePhoneDebugKotlin compilePhoneDebugJavaWithJavac --no-daemon --warning-mode all
-                ;;
-              --full|*)
-                gradle assemblePhoneDebug --no-daemon --warning-mode all
-                echo ""
-                echo "APKs:"
-                find . -name "*.apk" -newer local.properties 2>/dev/null || echo "(none found)"
-                ;;
-            esac
+          # ADB reverse port forwarding setup
+          setup-adb = pkgs.writeShellApplication {
+            name = "talkback-agent-setup";
+            runtimeInputs = [ androidSdk ];
+            text = ''
+              PORT="''${1:-8080}"
+              echo "Setting up ADB reverse port forwarding on port $PORT..."
+              adb reverse "tcp:$PORT" "tcp:$PORT"
+              echo "Done! Device connects to localhost:$PORT -> this machine's port $PORT over USB."
+            '';
+          };
 
-            echo ""
-            echo "=== Python Tests ==="
-            cd "$REPO/server"
-            python -m pytest test_server.py -v
+          # Full workflow: build Android + run server tests
+          dev = pkgs.writeShellApplication {
+            name = "talkback-agent-dev";
+            runtimeInputs = [ androidSdk pkgs.jdk17 gradle pythonEnv pkgs.git pkgs.coreutils pkgs.findutils pkgs.gnused ];
+            text = ''
+              REPO="''${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+              cd "$REPO"
 
-            echo ""
-            echo "All done."
-          '';
+              export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
+              export ANDROID_SDK_ROOT="$ANDROID_HOME"
+              export ANDROID_SDK="$ANDROID_HOME"
+              export JAVA_HOME="${pkgs.jdk17}"
+
+              echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+              echo "=== [1/2] Android Build ==="
+              gradle assemblePhoneDebug --no-daemon --warning-mode all
+
+              echo ""
+              echo "=== [2/2] Python Server Tests ==="
+              cd "$REPO/server"
+              python -m pytest test_server.py -v
+
+              echo ""
+              echo "All done. APKs:"
+              cd "$REPO"
+              find . -name "*.apk" -newer local.properties
+            '';
+          };
         };
       }
     );
