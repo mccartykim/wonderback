@@ -82,15 +82,38 @@ class AccessibilityAnalyzer:
         """Parse LLM JSON output into Issue objects."""
         try:
             data = json.loads(response_text)
-            return [Issue(**issue) for issue in data.get("issues", [])]
+            return self._issues_from_dicts(data.get("issues", []))
         except json.JSONDecodeError:
             # Fallback: extract JSON from markdown code blocks
             match = re.search(r"```json\n(.*?)\n```", response_text, re.DOTALL)
             if match:
-                data = json.loads(match.group(1))
-                return [Issue(**issue) for issue in data.get("issues", [])]
+                try:
+                    data = json.loads(match.group(1))
+                    return self._issues_from_dicts(data.get("issues", []))
+                except (json.JSONDecodeError, Exception) as inner:
+                    logger.warning(f"Failed to parse extracted JSON: {inner}")
             logger.warning(f"Failed to parse response as JSON: {response_text[:200]}")
             return []
+
+    @staticmethod
+    def _normalize_issue(raw: dict) -> dict:
+        """Normalize LLM output to match our enum values (case-insensitive)."""
+        normalized = dict(raw)
+        if "severity" in normalized:
+            normalized["severity"] = str(normalized["severity"]).upper()
+        if "category" in normalized:
+            normalized["category"] = str(normalized["category"]).upper()
+        return normalized
+
+    def _issues_from_dicts(self, raw_issues: list[dict]) -> list[Issue]:
+        """Convert raw dicts to Issue objects, skipping any that fail validation."""
+        issues = []
+        for raw in raw_issues:
+            try:
+                issues.append(Issue(**self._normalize_issue(raw)))
+            except Exception as e:
+                logger.warning(f"Skipping malformed issue: {e} (data: {raw})")
+        return issues
 
     def _empty_response(self, request: AnalysisRequest, start_time: float) -> AnalysisResponse:
         elapsed_ms = int((time.time() - start_time) * 1000)
