@@ -57,6 +57,7 @@ class AgentSettingsActivity : AppCompatActivity() {
 
         val addressEdit = addEditText(layout, "Server Address", config.manualServerAddress)
         val portEdit = addEditText(layout, "Server Port", config.serverPort.toString())
+        val tokenEdit = addEditText(layout, "Auth Token (auto-filled after approval)", config.authToken)
 
         // -- Connection Actions --
         val buttonRow = LinearLayout(this).apply {
@@ -126,6 +127,7 @@ class AgentSettingsActivity : AppCompatActivity() {
                 config.severityFilter = IssueSeverity.values()[severitySpinner.selectedItemPosition]
                 config.showNotifications = notificationSwitch.isChecked
                 config.captureFullMetadata = metadataSwitch.isChecked
+                config.authToken = tokenEdit.text.toString()
 
                 Toast.makeText(this@AgentSettingsActivity, "Settings saved", Toast.LENGTH_SHORT).show()
 

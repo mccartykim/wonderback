@@ -26,8 +26,9 @@ interface ServerConnection {
      * Fetch device settings from the server.
      * Returns the raw JSON response, or null if no update is available.
      * @param currentRevision Pass the last known revision to get changes only.
+     * @param deviceId If provided, server includes auth token for approved devices.
      */
-    suspend fun fetchSettings(currentRevision: Int = 0): String?
+    suspend fun fetchSettings(currentRevision: Int = 0, deviceId: String = ""): String?
 
     /** Close the connection. */
     fun close()

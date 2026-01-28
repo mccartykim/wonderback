@@ -245,11 +245,32 @@ class ConnectionManager(
 
     private suspend fun tryHttpConnection(baseUrl: String, description: String): ServerConnection? {
         return try {
-            val conn = HttpServerConnection(baseUrl, description)
+            val conn = HttpServerConnection(baseUrl, description) { config.authToken }
             if (conn.ping()) conn else null
         } catch (e: Exception) {
             Log.d(TAG, "Connection to $description failed: ${e.message}")
             null
+        }
+    }
+
+    /**
+     * Register this device with the server for auth approval.
+     * Called once after first successful connection. The server stores
+     * the device as "pending" until a dashboard user approves it.
+     */
+    suspend fun registerDevice() {
+        val conn = _currentConnection ?: return
+        try {
+            val payload = """{"device_name":"${android.os.Build.MODEL}","device_serial":"${android.os.Build.SERIAL}"}"""
+            val response = conn.sendCommand("/device/register", payload)
+            // Parse device_id from response
+            val deviceId = org.json.JSONObject(response).optString("device_id", "")
+            if (deviceId.isNotEmpty()) {
+                config.deviceId = deviceId
+                Log.i(TAG, "Device registered with server: $deviceId")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Device registration failed: ${e.message}")
         }
     }
 

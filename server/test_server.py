@@ -1,6 +1,7 @@
 """Tests for the TalkBack Agent analysis server."""
 
 import json
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 
 import main as srv
 from analyzer import AccessibilityAnalyzer
+from device_registry import DeviceInfo, DeviceRegistry, DeviceStatus, device_registry
 from device_settings import DeviceSettings, DeviceSettingsManager, device_settings
 from main import app
 from models import (
@@ -34,8 +36,12 @@ def init_server():
     """Initialize server globals for each test."""
     srv.analyzer = AccessibilityAnalyzer(model="test-model")
     srv.start_time = __import__("time").time()
+    device_registry.clear()
+    device_registry._static_token = None
     yield
     srv.analyzer = None
+    device_registry.clear()
+    device_registry._static_token = None
 
 
 @pytest.fixture
@@ -711,3 +717,447 @@ class TestSkillQueue:
         q = SkillQueue()
         q.clear()  # should not raise
         assert q.get_pending() == []
+
+
+# ── Device Registry Model Tests ──────────────────────────────────
+
+
+class TestDeviceRegistry:
+    def test_register_device(self):
+        reg = DeviceRegistry()
+        device = reg.register("Pixel 7", "ABC123")
+        assert device.device_name == "Pixel 7"
+        assert device.device_serial == "ABC123"
+        assert device.status == DeviceStatus.PENDING
+        assert device.auth_token is None
+
+    def test_register_deduplicates_by_serial(self):
+        reg = DeviceRegistry()
+        d1 = reg.register("Pixel 7", "ABC123")
+        d2 = reg.register("Pixel 7 (again)", "ABC123")
+        assert d1.device_id == d2.device_id
+        assert len(reg.get_all()) == 1
+
+    def test_register_no_serial_creates_separate(self):
+        reg = DeviceRegistry()
+        d1 = reg.register("Device A")
+        d2 = reg.register("Device B")
+        assert d1.device_id != d2.device_id
+        assert len(reg.get_all()) == 2
+
+    def test_approve_device(self):
+        reg = DeviceRegistry()
+        device = reg.register("Pixel 7", "ABC123")
+        approved = reg.approve(device.device_id)
+        assert approved is not None
+        assert approved.status == DeviceStatus.APPROVED
+        assert approved.auth_token is not None
+        assert len(approved.auth_token) == 32  # hex(16) = 32 chars
+        assert approved.approved_at is not None
+
+    def test_approve_nonexistent(self):
+        reg = DeviceRegistry()
+        assert reg.approve("nonexistent") is None
+
+    def test_approve_idempotent(self):
+        reg = DeviceRegistry()
+        device = reg.register("Pixel 7")
+        a1 = reg.approve(device.device_id)
+        a2 = reg.approve(device.device_id)
+        assert a1.auth_token == a2.auth_token  # Same token on re-approve
+
+    def test_reject_device(self):
+        reg = DeviceRegistry()
+        device = reg.register("Bad Device")
+        rejected = reg.reject(device.device_id)
+        assert rejected.status == DeviceStatus.REJECTED
+        assert rejected.auth_token is None
+
+    def test_reject_revokes_token(self):
+        reg = DeviceRegistry()
+        device = reg.register("Pixel 7")
+        approved = reg.approve(device.device_id)
+        token = approved.auth_token
+        assert reg.validate_token(token)
+
+        reg.reject(device.device_id)
+        assert not reg.validate_token(token)
+
+    def test_validate_token(self):
+        reg = DeviceRegistry()
+        device = reg.register("Pixel 7")
+        reg.approve(device.device_id)
+        token = reg.get_token_for_device(device.device_id)
+        assert reg.validate_token(token)
+        assert not reg.validate_token("bogus")
+
+    def test_static_token(self):
+        reg = DeviceRegistry()
+        reg._static_token = "my-static-token"
+        assert reg.validate_token("my-static-token")
+        assert not reg.validate_token("wrong")
+        assert reg.auth_enabled
+
+    def test_auth_enabled_false_initially(self):
+        reg = DeviceRegistry()
+        assert not reg.auth_enabled
+
+    def test_auth_enabled_after_approval(self):
+        reg = DeviceRegistry()
+        device = reg.register("Pixel")
+        assert not reg.auth_enabled
+        reg.approve(device.device_id)
+        assert reg.auth_enabled
+
+    def test_get_pending(self):
+        reg = DeviceRegistry()
+        d1 = reg.register("A")
+        d2 = reg.register("B")
+        reg.approve(d1.device_id)
+        pending = reg.get_pending()
+        assert len(pending) == 1
+        assert pending[0].device_id == d2.device_id
+
+    def test_get_device_by_token(self):
+        reg = DeviceRegistry()
+        device = reg.register("Pixel")
+        reg.approve(device.device_id)
+        found = reg.get_device_by_token(device.auth_token)
+        assert found is not None
+        assert found.device_id == device.device_id
+
+    def test_clear(self):
+        reg = DeviceRegistry()
+        reg.register("A")
+        reg.clear()
+        assert len(reg.get_all()) == 0
+
+    def test_multiple_devices_unique_tokens(self):
+        reg = DeviceRegistry()
+        d1 = reg.register("A", "S1")
+        d2 = reg.register("B", "S2")
+        reg.approve(d1.device_id)
+        reg.approve(d2.device_id)
+        t1 = reg.get_token_for_device(d1.device_id)
+        t2 = reg.get_token_for_device(d2.device_id)
+        assert t1 != t2
+        assert reg.validate_token(t1)
+        assert reg.validate_token(t2)
+
+
+# ── Device Registration Endpoint Tests ───────────────────────────
+
+
+class TestDeviceEndpoints:
+    def test_register_device(self, client):
+        resp = client.post("/device/register", json={"device_name": "Pixel 7", "device_serial": "ABC"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "pending"
+        assert "device_id" in data
+
+    def test_approve_device(self, client):
+        resp = client.post("/device/register", json={"device_name": "Pixel 7"})
+        device_id = resp.json()["device_id"]
+
+        resp = client.post(f"/device/approve/{device_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "approved"
+        assert "auth_token" in data
+        assert len(data["auth_token"]) == 32
+
+    def test_approve_nonexistent(self, client):
+        resp = client.post("/device/approve/nonexistent")
+        assert resp.status_code == 404
+
+    def test_reject_device(self, client):
+        resp = client.post("/device/register", json={"device_name": "Bad"})
+        device_id = resp.json()["device_id"]
+
+        resp = client.post(f"/device/reject/{device_id}")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "rejected"
+
+    def test_pending_devices(self, client):
+        client.post("/device/register", json={"device_name": "A"})
+        client.post("/device/register", json={"device_name": "B"})
+        resp = client.get("/device/pending")
+        assert resp.status_code == 200
+        assert len(resp.json()) == 2
+
+    def test_all_devices(self, client):
+        client.post("/device/register", json={"device_name": "A"})
+        resp = client.get("/device/all")
+        assert resp.status_code == 200
+        assert len(resp.json()) >= 1
+
+    def test_settings_includes_token_for_approved_device(self, client):
+        # Register and approve
+        resp = client.post("/device/register", json={"device_name": "Pixel"})
+        device_id = resp.json()["device_id"]
+        client.post(f"/device/approve/{device_id}")
+
+        # Settings poll with device_id should include token
+        resp = client.get(f"/settings?device_id={device_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "auth_token" in data
+        assert len(data["auth_token"]) == 32
+
+    def test_settings_no_token_for_pending_device(self, client):
+        resp = client.post("/device/register", json={"device_name": "Pixel"})
+        device_id = resp.json()["device_id"]
+
+        resp = client.get(f"/settings?device_id={device_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "auth_token" not in data
+
+    def test_settings_no_token_without_device_id(self, client):
+        resp = client.get("/settings")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "auth_token" not in data
+
+    def test_health_includes_auth_fields(self, client):
+        resp = client.get("/health")
+        data = resp.json()
+        assert "auth_enabled" in data
+        assert "pending_devices" in data
+        assert data["auth_enabled"] is False
+        assert data["pending_devices"] == 0
+
+
+# ── Auth Middleware Tests ────────────────────────────────────────
+
+
+class TestAuthMiddleware:
+    """Test that mutation endpoints enforce auth once a device is approved."""
+
+    def _setup_auth(self, client):
+        """Register and approve a device, return its token."""
+        resp = client.post("/device/register", json={"device_name": "Test"})
+        device_id = resp.json()["device_id"]
+        resp = client.post(f"/device/approve/{device_id}")
+        return resp.json()["auth_token"]
+
+    def test_mutations_open_before_any_approval(self, client, sample_utterances):
+        """Before any device is approved, auth is not enforced."""
+        resp = client.post(
+            "/analyze",
+            json={"utterances": sample_utterances, "context": {"trigger": "MANUAL"}},
+        )
+        assert resp.status_code == 200
+
+    def test_mutations_require_token_after_approval(self, client, sample_utterances):
+        """After a device is approved, mutations without token get 401."""
+        self._setup_auth(client)
+
+        resp = client.post(
+            "/analyze",
+            json={"utterances": sample_utterances, "context": {"trigger": "MANUAL"}},
+        )
+        assert resp.status_code == 401
+
+    def test_mutations_succeed_with_valid_token(self, client, sample_utterances):
+        """Mutations succeed with a valid token."""
+        token = self._setup_auth(client)
+
+        resp = client.post(
+            "/analyze",
+            json={"utterances": sample_utterances, "context": {"trigger": "MANUAL"}},
+            headers={"X-Agent-Token": token},
+        )
+        assert resp.status_code == 200
+
+    def test_mutations_reject_invalid_token(self, client, sample_utterances):
+        """Mutations fail with an invalid token."""
+        self._setup_auth(client)
+
+        resp = client.post(
+            "/analyze",
+            json={"utterances": sample_utterances, "context": {"trigger": "MANUAL"}},
+            headers={"X-Agent-Token": "bogus-token"},
+        )
+        assert resp.status_code == 401
+
+    def test_get_endpoints_open_always(self, client):
+        """GET endpoints (health, settings, session, etc.) never require auth."""
+        self._setup_auth(client)
+
+        for path in ["/health", "/settings", "/session", "/skill/pending", "/skill/history"]:
+            resp = client.get(path)
+            assert resp.status_code == 200, f"GET {path} should be open, got {resp.status_code}"
+
+    def test_patch_settings_requires_auth(self, client):
+        token = self._setup_auth(client)
+
+        # Without token
+        resp = client.patch("/settings", json={"buffer_size": 10})
+        assert resp.status_code == 401
+
+        # With token
+        resp = client.patch(
+            "/settings",
+            json={"buffer_size": 10},
+            headers={"X-Agent-Token": token},
+        )
+        assert resp.status_code == 200
+
+    def test_tts_toggle_requires_auth(self, client):
+        token = self._setup_auth(client)
+
+        resp = client.post("/settings/tts?suppress=true")
+        assert resp.status_code == 401
+
+        resp = client.post(
+            "/settings/tts?suppress=true",
+            headers={"X-Agent-Token": token},
+        )
+        assert resp.status_code == 200
+
+    def test_session_start_requires_auth(self, client):
+        token = self._setup_auth(client)
+
+        resp = client.post("/session/start")
+        assert resp.status_code == 401
+
+        resp = client.post("/session/start", headers={"X-Agent-Token": token})
+        assert resp.status_code == 200
+
+    def test_session_end_requires_auth(self, client):
+        token = self._setup_auth(client)
+
+        resp = client.post("/session/end?save=false")
+        assert resp.status_code == 401
+
+        resp = client.post(
+            "/session/end?save=false",
+            headers={"X-Agent-Token": token},
+        )
+        assert resp.status_code == 200
+
+    def test_session_note_requires_auth(self, client):
+        token = self._setup_auth(client)
+
+        resp = client.post("/session/note?note=test")
+        assert resp.status_code == 401
+
+        resp = client.post(
+            "/session/note?note=test",
+            headers={"X-Agent-Token": token},
+        )
+        assert resp.status_code == 200
+
+    def test_static_env_token(self, client, sample_utterances):
+        """AGENT_AUTH_TOKEN env var works as auth token."""
+        device_registry._static_token = "env-secret-token"
+
+        # Without token — should fail (auth is now enabled via static token)
+        resp = client.post(
+            "/analyze",
+            json={"utterances": sample_utterances, "context": {"trigger": "MANUAL"}},
+        )
+        assert resp.status_code == 401
+
+        # With static token — should succeed
+        resp = client.post(
+            "/analyze",
+            json={"utterances": sample_utterances, "context": {"trigger": "MANUAL"}},
+            headers={"X-Agent-Token": "env-secret-token"},
+        )
+        assert resp.status_code == 200
+
+    def test_device_register_always_open(self, client):
+        """Device registration never requires auth (chicken-and-egg)."""
+        self._setup_auth(client)
+
+        resp = client.post("/device/register", json={"device_name": "NewDevice"})
+        assert resp.status_code == 200
+
+
+# ── Full Auth Flow Integration Tests ─────────────────────────────
+
+
+class TestAuthFlow:
+    """End-to-end auth negotiation flow as the device would experience it."""
+
+    def test_full_negotiation_flow(self, client, sample_utterances):
+        """
+        Simulate the complete device auth flow:
+        1. Device registers
+        2. Dashboard user approves
+        3. Device picks up token via /settings poll
+        4. Device uses token for mutations
+        """
+        # Step 1: Device registers
+        resp = client.post("/device/register", json={
+            "device_name": "Pixel 7",
+            "device_serial": "ABCD1234",
+        })
+        assert resp.status_code == 200
+        device_id = resp.json()["device_id"]
+        assert resp.json()["status"] == "pending"
+
+        # Step 2: Dashboard sees pending device and approves
+        pending = client.get("/device/pending").json()
+        assert len(pending) == 1
+        assert pending[0]["device_name"] == "Pixel 7"
+
+        approve_resp = client.post(f"/device/approve/{device_id}")
+        assert approve_resp.status_code == 200
+        assert approve_resp.json()["status"] == "approved"
+
+        # Step 3: Device polls /settings with device_id, gets token
+        settings_resp = client.get(f"/settings?device_id={device_id}")
+        assert settings_resp.status_code == 200
+        token = settings_resp.json().get("auth_token")
+        assert token is not None
+        assert len(token) == 32
+
+        # Step 4: Device uses token for mutations
+        resp = client.post(
+            "/analyze",
+            json={"utterances": sample_utterances, "context": {"trigger": "MANUAL"}},
+            headers={"X-Agent-Token": token},
+        )
+        assert resp.status_code == 200
+
+        # Without token — rejected
+        resp = client.post(
+            "/analyze",
+            json={"utterances": sample_utterances, "context": {"trigger": "MANUAL"}},
+        )
+        assert resp.status_code == 401
+
+    def test_re_registration_returns_same_device(self, client):
+        """Device re-registering with same serial gets same device_id."""
+        r1 = client.post("/device/register", json={
+            "device_name": "Pixel", "device_serial": "SN123"
+        })
+        r2 = client.post("/device/register", json={
+            "device_name": "Pixel Retry", "device_serial": "SN123"
+        })
+        assert r1.json()["device_id"] == r2.json()["device_id"]
+
+    def test_token_delivery_via_settings_304_path(self, client):
+        """
+        When settings haven't changed but device is newly approved,
+        the token is still delivered even on the 304 path.
+        """
+        # Register and get initial settings (establishes revision baseline)
+        resp = client.post("/device/register", json={"device_name": "Pixel"})
+        device_id = resp.json()["device_id"]
+
+        initial = client.get(f"/settings?device_id={device_id}")
+        revision = initial.json()["revision"]
+
+        # Approve device (doesn't bump settings revision)
+        client.post(f"/device/approve/{device_id}")
+
+        # Poll with current revision — would normally be 304, but token is available
+        resp = client.get(f"/settings?revision={revision}&device_id={device_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "auth_token" in data

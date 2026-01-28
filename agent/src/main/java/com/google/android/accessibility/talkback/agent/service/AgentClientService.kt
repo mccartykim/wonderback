@@ -113,6 +113,10 @@ class AgentClientService : Service(), SpeechCapture.SpeechCaptureListener,
     ) {
         val statusText = when (state) {
             ConnectionManager.ConnectionState.CONNECTED -> {
+                // Register device for auth approval if not already registered
+                if (config.deviceId.isEmpty()) {
+                    scope.launch { connectionManager.registerDevice() }
+                }
                 // Start polling for server-controlled settings and pending skills
                 connectionManager.currentConnection?.let { conn ->
                     settingsPoller.start(conn, scope)

@@ -44,10 +44,13 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
+from pydantic import BaseModel
+
 from analyzer import AccessibilityAnalyzer
+from device_registry import DeviceInfo, DeviceRegistry, device_registry
 from device_settings import DeviceSettings, device_settings
 from models import AnalysisRequest, AnalysisResponse, SkillCommand, SkillResult
 from session import SessionManager, session_manager
@@ -59,6 +62,31 @@ logger = logging.getLogger("talkback-agent-server")
 analyzer: AccessibilityAnalyzer | None = None
 zeroconf_instance = None
 start_time: float = 0
+
+
+# ── Auth dependency ──────────────────────────────────────────────
+
+
+async def require_auth(x_agent_token: str = Header(default="")):
+    """
+    FastAPI dependency that validates X-Agent-Token on mutation endpoints.
+
+    Returns early (no-op) if no devices have been approved yet — this avoids
+    locking out the system before any device has gone through approval.
+    Once at least one device is approved (or AGENT_AUTH_TOKEN env is set),
+    all mutation requests must carry a valid token.
+    """
+    if not device_registry.auth_enabled:
+        return  # No auth configured yet, allow all
+    if not x_agent_token:
+        raise _auth_error("Missing X-Agent-Token header")
+    if not device_registry.validate_token(x_agent_token):
+        raise _auth_error("Invalid auth token")
+
+
+def _auth_error(detail: str):
+    from fastapi import HTTPException
+    return HTTPException(status_code=401, detail=detail)
 
 
 def register_mdns(port: int) -> None:
@@ -116,6 +144,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     skill_queue.clear()
+    device_registry.clear()
     unregister_mdns()
     logger.info("Server shutting down")
 
@@ -190,6 +219,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <h3>Recent Issues</h3>
     <div id="issues">None yet</div>
   </div>
+  <div class="card">
+    <h3>Devices</h3>
+    <div id="devices">No devices</div>
+  </div>
 </div>
 
 <div class="links">
@@ -256,11 +289,45 @@ async function refresh() {
       document.getElementById('skills').innerHTML = 'None pending';
     }
   } catch(e) {}
+
+  // Devices
+  try {
+    const devs = await (await fetch('/device/all')).json();
+    if (devs.length > 0) {
+      document.getElementById('devices').innerHTML = devs.map(d => {
+        let badge = d.status === 'approved'
+          ? '<span class="badge badge-ok">Approved</span>'
+          : d.status === 'pending'
+            ? '<span class="badge badge-warn">Pending</span>'
+            : '<span class="badge badge-err">Rejected</span>';
+        let actions = d.status === 'pending'
+          ? ` <button class="refresh-btn" onclick="approveDevice('${d.device_id}')">Approve</button>`
+            + ` <button class="refresh-btn" onclick="rejectDevice('${d.device_id}')">Reject</button>`
+          : '';
+        let tokenInfo = d.status === 'approved' && d.auth_token
+          ? `<div class="stat-label" style="margin-top:4px">Token: <code>${d.auth_token.substring(0,8)}...</code></div>`
+          : '';
+        return `<div style="margin-bottom:8px">${badge} ${d.device_name || d.device_id}${actions}${tokenInfo}</div>`;
+      }).join('');
+    } else {
+      document.getElementById('devices').innerHTML = 'No devices registered';
+    }
+  } catch(e) {}
 }
 
 async function toggleTts() {
   const suppress = !window._ttsSuppressed;
   await fetch('/settings/tts?suppress=' + suppress, {method: 'POST'});
+  refresh();
+}
+
+async function approveDevice(deviceId) {
+  await fetch('/device/approve/' + deviceId, {method: 'POST'});
+  refresh();
+}
+
+async function rejectDevice(deviceId) {
+  await fetch('/device/reject/' + deviceId, {method: 'POST'});
   refresh();
 }
 
@@ -332,10 +399,12 @@ async def health():
         "active_session": session_manager.current.session_id,
         "tts_suppressed": device_settings.current.tts_suppressed,
         "settings_revision": device_settings.current.revision,
+        "auth_enabled": device_registry.auth_enabled,
+        "pending_devices": len(device_registry.get_pending()),
     }
 
 
-@app.post("/analyze", response_model=AnalysisResponse)
+@app.post("/analyze", response_model=AnalysisResponse, dependencies=[Depends(require_auth)])
 async def analyze(request: AnalysisRequest):
     """
     Analyze a batch of TalkBack utterances for accessibility issues.
@@ -417,7 +486,7 @@ async def stream_analysis(websocket: WebSocket):
 # ── Skill Execution Endpoints ─────────────────────────────────────
 
 
-@app.post("/skill/execute", response_model=SkillExecResponse)
+@app.post("/skill/execute", response_model=SkillExecResponse, dependencies=[Depends(require_auth)])
 async def skill_execute(request: SkillExecRequest):
     """
     Queue a skill for execution on the Android device.
@@ -451,7 +520,7 @@ async def skill_pending():
     return skill_queue.get_pending()
 
 
-@app.post("/skill/result")
+@app.post("/skill/result", dependencies=[Depends(require_auth)])
 async def skill_result(result: SkillResultReport):
     """
     Report the result of a skill execution (called by Android device).
@@ -474,7 +543,7 @@ async def skill_history(limit: int = Query(default=50, le=200)):
 # ── Session Endpoints ─────────────────────────────────────────────
 
 
-@app.post("/session/start")
+@app.post("/session/start", dependencies=[Depends(require_auth)])
 async def session_start(session_id: Optional[str] = None):
     """Start a new recording session."""
     session = session_manager.start_new(session_id)
@@ -502,7 +571,7 @@ async def session_export(format: str = Query(default="json", pattern="^(json|mar
     return JSONResponse(content=__import__("json").loads(session.export_json()))
 
 
-@app.post("/session/end")
+@app.post("/session/end", dependencies=[Depends(require_auth)])
 async def session_end(save: bool = Query(default=True)):
     """End the current session. Optionally save to disk."""
     session = session_manager.current
@@ -519,7 +588,7 @@ async def session_end(save: bool = Query(default=True)):
     return summary
 
 
-@app.post("/session/note")
+@app.post("/session/note", dependencies=[Depends(require_auth)])
 async def session_note(note: str):
     """Add a note to the current session."""
     session_manager.current.add_note(note)
@@ -536,23 +605,43 @@ async def session_history():
 
 
 @app.get("/settings")
-async def get_settings(revision: int = Query(default=0)):
+async def get_settings(
+    revision: int = Query(default=0),
+    device_id: str = Query(default=""),
+):
     """
     Get current device settings.
 
     If `revision` is provided, returns settings only if they've changed
     since that revision (304 Not Modified otherwise). This allows efficient
     polling by the device.
+
+    If `device_id` is provided and the device has been approved, the response
+    includes `auth_token` so the device can start authenticating.
     """
     if revision > 0:
         updated = device_settings.get_if_newer(revision)
         if updated is None:
+            # Even on 304, check if a token is newly available
+            if device_id:
+                token = device_registry.get_token_for_device(device_id)
+                if token:
+                    return {"auth_token": token, "_token_only": True}
             return JSONResponse(status_code=304, content=None)
-        return updated
-    return device_settings.current
+        settings_dict = updated.model_dump()
+    else:
+        settings_dict = device_settings.current.model_dump()
+
+    # Attach auth token if device is approved
+    if device_id:
+        token = device_registry.get_token_for_device(device_id)
+        if token:
+            settings_dict["auth_token"] = token
+
+    return settings_dict
 
 
-@app.patch("/settings")
+@app.patch("/settings", dependencies=[Depends(require_auth)])
 async def update_settings(updates: dict):
     """
     Update one or more device settings.
@@ -569,7 +658,7 @@ async def update_settings(updates: dict):
     return settings
 
 
-@app.post("/settings/tts")
+@app.post("/settings/tts", dependencies=[Depends(require_auth)])
 async def toggle_tts(suppress: bool = Query(...)):
     """
     Convenience endpoint to toggle TTS suppression.
@@ -585,6 +674,81 @@ async def toggle_tts(suppress: bool = Query(...)):
     logger.info(log_msg)
     await broadcast_log(log_msg)
     return {"tts_suppressed": settings.tts_suppressed, "revision": settings.revision}
+
+
+# ── Device Registration & Auth Endpoints ──────────────────────────
+
+
+class DeviceRegisterRequest(BaseModel):
+    """Request body for device registration."""
+    device_name: str
+    device_serial: str = ""
+
+
+@app.post("/device/register")
+async def device_register(request: DeviceRegisterRequest):
+    """
+    Register a device for approval.
+
+    The device calls this on first connect. The server creates a pending
+    entry visible on the dashboard. Once approved, the device picks up
+    its auth token via the /settings poll.
+    """
+    device = device_registry.register(request.device_name, request.device_serial)
+    log_msg = f"Device registered: {device.device_id} ({device.device_name}) status={device.status}"
+    logger.info(log_msg)
+    await broadcast_log(log_msg)
+    return {
+        "device_id": device.device_id,
+        "status": device.status,
+    }
+
+
+@app.post("/device/approve/{device_id}")
+async def device_approve(device_id: str):
+    """
+    Approve a pending device, generating its auth token.
+
+    Called from the dashboard. After approval, the device's next /settings
+    poll will include the token.
+    """
+    device = device_registry.approve(device_id)
+    if device is None:
+        return JSONResponse(status_code=404, content={"error": f"Device {device_id} not found"})
+
+    log_msg = f"Device approved: {device_id} ({device.device_name})"
+    logger.info(log_msg)
+    await broadcast_log(log_msg)
+    return {
+        "device_id": device.device_id,
+        "status": device.status,
+        "auth_token": device.auth_token,
+    }
+
+
+@app.post("/device/reject/{device_id}")
+async def device_reject(device_id: str):
+    """Reject a pending device."""
+    device = device_registry.reject(device_id)
+    if device is None:
+        return JSONResponse(status_code=404, content={"error": f"Device {device_id} not found"})
+
+    log_msg = f"Device rejected: {device_id} ({device.device_name})"
+    logger.info(log_msg)
+    await broadcast_log(log_msg)
+    return {"device_id": device.device_id, "status": device.status}
+
+
+@app.get("/device/pending")
+async def device_pending():
+    """Get all pending device registrations (for dashboard polling)."""
+    return [d.model_dump() for d in device_registry.get_pending()]
+
+
+@app.get("/device/all")
+async def device_all():
+    """Get all registered devices."""
+    return [d.model_dump() for d in device_registry.get_all()]
 
 
 # ── Legacy command endpoint (kept for backwards compat) ───────────

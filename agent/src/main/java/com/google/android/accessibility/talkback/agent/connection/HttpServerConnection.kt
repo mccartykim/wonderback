@@ -15,10 +15,14 @@ import java.util.concurrent.TimeUnit
 /**
  * HTTP-based connection to the analysis server.
  * Used for all connection methods (ADB reverse, mDNS, USB tethering, manual).
+ *
+ * @param tokenProvider Returns the current auth token, or empty string if none.
+ *   Called on every request so the token can change after device approval.
  */
 class HttpServerConnection(
     private val baseUrl: String,
-    override val description: String
+    override val description: String,
+    private val tokenProvider: () -> String = { "" }
 ) : ServerConnection {
 
     private val gson: Gson = GsonBuilder()
@@ -33,6 +37,17 @@ class HttpServerConnection(
         .readTimeout(READ_TIMEOUT_S, TimeUnit.SECONDS)
         .writeTimeout(WRITE_TIMEOUT_S, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
+        .addInterceptor { chain ->
+            val token = tokenProvider()
+            val request = if (token.isNotEmpty()) {
+                chain.request().newBuilder()
+                    .header("X-Agent-Token", token)
+                    .build()
+            } else {
+                chain.request()
+            }
+            chain.proceed(request)
+        }
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
@@ -109,11 +124,15 @@ class HttpServerConnection(
             }
         }
 
-    override suspend fun fetchSettings(currentRevision: Int): String? =
+    override suspend fun fetchSettings(currentRevision: Int, deviceId: String): String? =
         withContext(Dispatchers.IO) {
             try {
+                val url = buildString {
+                    append("$baseUrl/settings?revision=$currentRevision")
+                    if (deviceId.isNotEmpty()) append("&device_id=$deviceId")
+                }
                 val request = Request.Builder()
-                    .url("$baseUrl/settings?revision=$currentRevision")
+                    .url(url)
                     .get()
                     .build()
 

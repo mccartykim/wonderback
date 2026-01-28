@@ -78,6 +78,16 @@ class AgentConfig(context: Context) {
         get() = prefs.getInt(KEY_SERVER_PORT, DEFAULT_PORT)
         set(value) = prefs.edit().putInt(KEY_SERVER_PORT, value).apply()
 
+    /** Auth token received from server after device approval. */
+    var authToken: String
+        get() = prefs.getString(KEY_AUTH_TOKEN, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_AUTH_TOKEN, value).apply()
+
+    /** Device ID assigned by server during registration. */
+    var deviceId: String
+        get() = prefs.getString(KEY_DEVICE_ID, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_DEVICE_ID, value).apply()
+
     enum class ConnectionMethod {
         AUTO, ADB_REVERSE, NETWORK, USB_TETHERING, MANUAL
     }
@@ -102,6 +112,8 @@ class AgentConfig(context: Context) {
         private const val KEY_DEBUG_LOGGING = "debug_logging"
         private const val KEY_GESTURE_INJECTION = "gesture_injection"
         private const val KEY_SERVER_PORT = "server_port"
+        private const val KEY_AUTH_TOKEN = "auth_token"
+        private const val KEY_DEVICE_ID = "device_id"
 
         @Volatile
         private var instance: AgentConfig? = null

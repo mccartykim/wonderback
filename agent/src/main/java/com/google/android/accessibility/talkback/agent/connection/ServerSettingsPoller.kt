@@ -53,7 +53,7 @@ class ServerSettingsPoller(
 
     private suspend fun pollOnce() {
         val conn = connection ?: return
-        val json = conn.fetchSettings(lastRevision) ?: return
+        val json = conn.fetchSettings(lastRevision, config.deviceId) ?: return
 
         try {
             val settings = gson.fromJson(json, JsonObject::class.java)
@@ -133,6 +133,14 @@ class ServerSettingsPoller(
             if (config.debugLogging != value) {
                 config.debugLogging = value
                 Log.i(TAG, "Debug logging -> $value")
+            }
+        }
+
+        // Auth token — delivered via /settings after dashboard approval
+        settings.get("auth_token")?.asString?.let { token ->
+            if (token.isNotEmpty() && config.authToken != token) {
+                config.authToken = token
+                Log.i(TAG, "Auth token received from server")
             }
         }
     }
