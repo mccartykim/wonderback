@@ -7,8 +7,10 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.google.android.accessibility.talkback.agent.AgentManager
 import com.google.android.accessibility.talkback.agent.connection.ConnectionManager
 import com.google.android.accessibility.talkback.agent.connection.ServerSettingsPoller
+import com.google.android.accessibility.talkback.agent.connection.SkillPoller
 import com.google.android.accessibility.talkback.agent.model.*
 import com.google.android.accessibility.talkback.agent.ui.IssueListActivity
 import kotlinx.coroutines.*
@@ -26,6 +28,7 @@ class AgentClientService : Service(), SpeechCapture.SpeechCaptureListener,
     private lateinit var config: AgentConfig
     private lateinit var connectionManager: ConnectionManager
     private lateinit var settingsPoller: ServerSettingsPoller
+    private var skillPoller: SkillPoller? = null
     private val utteranceBuffer = ArrayDeque<UtteranceEvent>()
     private val recentIssues = mutableListOf<Issue>()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -37,6 +40,11 @@ class AgentClientService : Service(), SpeechCapture.SpeechCaptureListener,
         connectionManager = ConnectionManager(this, config)
         connectionManager.addListener(this)
         settingsPoller = ServerSettingsPoller(config)
+
+        // Create skill poller if the agent is available
+        AgentManager.getInstanceOrNull()?.getAgent()?.let { agent ->
+            skillPoller = SkillPoller(agent)
+        }
 
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildStatusNotification("Initializing..."))
@@ -72,6 +80,7 @@ class AgentClientService : Service(), SpeechCapture.SpeechCaptureListener,
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        skillPoller?.stop()
         settingsPoller.stop()
         SpeechCapture.getInstance().removeListener(this)
         connectionManager.removeListener(this)
@@ -104,19 +113,22 @@ class AgentClientService : Service(), SpeechCapture.SpeechCaptureListener,
     ) {
         val statusText = when (state) {
             ConnectionManager.ConnectionState.CONNECTED -> {
-                // Start polling for server-controlled settings
+                // Start polling for server-controlled settings and pending skills
                 connectionManager.currentConnection?.let { conn ->
                     settingsPoller.start(conn, scope)
+                    skillPoller?.start(conn, scope)
                 }
                 "Connected: $info"
             }
             ConnectionManager.ConnectionState.CONNECTING -> "Connecting..."
             ConnectionManager.ConnectionState.RECONNECTING -> {
                 settingsPoller.stop()
+                skillPoller?.stop()
                 "Reconnecting..."
             }
             ConnectionManager.ConnectionState.DISCONNECTED -> {
                 settingsPoller.stop()
+                skillPoller?.stop()
                 "Disconnected"
             }
         }

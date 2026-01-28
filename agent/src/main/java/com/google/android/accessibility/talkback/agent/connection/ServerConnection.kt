@@ -16,8 +16,11 @@ interface ServerConnection {
     /** Send an analysis request and get the response. */
     suspend fun analyze(request: AnalysisRequest): AnalysisResponse
 
-    /** Send a raw command to the server (for agent skill API). */
+    /** Send a raw POST command to the server (for agent skill API). */
     suspend fun sendCommand(endpoint: String, payload: String): String
+
+    /** Send a raw GET request to the server. Returns the response body. */
+    suspend fun fetchCommand(endpoint: String): String
 
     /**
      * Fetch device settings from the server.

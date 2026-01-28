@@ -93,6 +93,22 @@ class HttpServerConnection(
             }
         }
 
+    override suspend fun fetchCommand(endpoint: String): String =
+        withContext(Dispatchers.IO) {
+            val httpRequest = Request.Builder()
+                .url("$baseUrl$endpoint")
+                .get()
+                .build()
+
+            client.newCall(httpRequest).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IOException("GET $endpoint failed: ${response.code} ${response.message}")
+                }
+
+                response.body?.string() ?: ""
+            }
+        }
+
     override suspend fun fetchSettings(currentRevision: Int): String? =
         withContext(Dispatchers.IO) {
             try {
