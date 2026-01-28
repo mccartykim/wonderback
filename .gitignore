@@ -21,3 +21,11 @@ build/
 proguard/build/
 talkback/build/
 utils/build/
+agent/build/
+
+## Python
+__pycache__/
+*.pyc
+*.pyo
+server/venv/
+server/.env
