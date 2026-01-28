@@ -11,6 +11,8 @@ import main as srv
 from analyzer import AccessibilityAnalyzer
 from device_registry import DeviceInfo, DeviceRegistry, DeviceStatus, device_registry
 from device_settings import DeviceSettings, DeviceSettingsManager, device_settings
+from gym import GymCellResult, GymRunner, GymRunSummary, _parse_issues_from_raw, gym_runner
+from gym_backends import ApiBackend, BackendConfig, BackendResult, CliBackend, ModelBackend, OllamaBackend, create_backend
 from main import app
 from models import (
     AnalysisRequest,
@@ -38,10 +40,12 @@ def init_server():
     srv.start_time = __import__("time").time()
     device_registry.clear()
     device_registry._static_token = None
+    gym_runner.clear()
     yield
     srv.analyzer = None
     device_registry.clear()
     device_registry._static_token = None
+    gym_runner.clear()
 
 
 @pytest.fixture
@@ -1161,3 +1165,229 @@ class TestAuthFlow:
         assert resp.status_code == 200
         data = resp.json()
         assert "auth_token" in data
+
+
+# ── Gym Backend Model Tests ──────────────────────────────────────
+
+
+class TestGymBackends:
+    def test_create_ollama_backend(self):
+        cfg = BackendConfig(name="test-ollama", backend="ollama", model="phi4")
+        backend = create_backend(cfg)
+        assert isinstance(backend, OllamaBackend)
+        assert backend.name == "test-ollama"
+
+    def test_create_api_backend(self):
+        cfg = BackendConfig(
+            name="test-api", backend="api",
+            api_url="https://api.openai.com/v1/chat/completions",
+            api_model="gpt-4o",
+            api_headers={"Authorization": "Bearer sk-test"},
+        )
+        backend = create_backend(cfg)
+        assert isinstance(backend, ApiBackend)
+
+    def test_create_cli_backend(self):
+        cfg = BackendConfig(
+            name="test-cli", backend="cli",
+            command=["echo", "hello"],
+            timeout_s=30,
+        )
+        backend = create_backend(cfg)
+        assert isinstance(backend, CliBackend)
+
+    def test_create_unknown_backend_raises(self):
+        cfg = BackendConfig(name="bad", backend="unknown")
+        with pytest.raises(ValueError, match="Unknown backend type"):
+            create_backend(cfg)
+
+    def test_backend_config_defaults(self):
+        cfg = BackendConfig(name="x", backend="ollama")
+        assert cfg.timeout_s == 120
+        assert cfg.api_headers == {}
+        assert cfg.command == []
+
+    @pytest.mark.asyncio
+    async def test_ollama_backend_import_error(self):
+        """OllamaBackend handles missing ollama package gracefully."""
+        cfg = BackendConfig(name="no-ollama", backend="ollama", model="test")
+        backend = OllamaBackend(cfg)
+        with patch.dict("sys.modules", {"ollama": None}):
+            with patch("gym_backends.OllamaBackend.invoke") as mock_invoke:
+                mock_invoke.return_value = BackendResult(
+                    backend_name="no-ollama",
+                    raw_output="",
+                    latency_ms=0,
+                    success=False,
+                    error="ollama package not installed",
+                )
+                result = await mock_invoke()
+                assert not result.success
+                assert "not installed" in result.error
+
+    @pytest.mark.asyncio
+    async def test_cli_backend_echo(self):
+        """CliBackend with echo command returns input."""
+        cfg = BackendConfig(name="echo", backend="cli", command=["cat"], timeout_s=5)
+        backend = CliBackend(cfg)
+        result = await backend.invoke("system", "user prompt")
+        assert result.success
+        assert "system" in result.raw_output
+        assert "user prompt" in result.raw_output
+        assert result.latency_ms >= 0
+
+    @pytest.mark.asyncio
+    async def test_cli_backend_failure(self):
+        """CliBackend handles command failure."""
+        cfg = BackendConfig(name="fail", backend="cli", command=["false"], timeout_s=5)
+        backend = CliBackend(cfg)
+        result = await backend.invoke("sys", "usr")
+        assert not result.success
+        assert "Exit code" in result.error
+
+    @pytest.mark.asyncio
+    async def test_cli_backend_timeout(self):
+        """CliBackend handles timeout."""
+        cfg = BackendConfig(name="slow", backend="cli", command=["sleep", "10"], timeout_s=1)
+        backend = CliBackend(cfg)
+        result = await backend.invoke("sys", "usr")
+        assert not result.success
+        assert "Timeout" in result.error
+
+
+# ── Gym Runner Tests ─────────────────────────────────────────────
+
+
+class TestGymRunner:
+    def test_parse_issues_from_raw_json(self):
+        raw = json.dumps({"issues": [{"severity": "warning", "issue": "test"}]})
+        issues, ok = _parse_issues_from_raw(raw)
+        assert ok
+        assert len(issues) == 1
+
+    def test_parse_issues_from_markdown(self):
+        raw = "Here:\n```json\n{\"issues\": [{\"severity\": \"error\", \"issue\": \"bad\"}]}\n```"
+        issues, ok = _parse_issues_from_raw(raw)
+        assert ok
+        assert len(issues) == 1
+
+    def test_parse_issues_from_garbage(self):
+        issues, ok = _parse_issues_from_raw("not json at all")
+        assert not ok
+        assert issues == []
+
+    def test_parse_issues_empty(self):
+        issues, ok = _parse_issues_from_raw('{"issues": []}')
+        assert ok
+        assert issues == []
+
+    def test_gym_runner_history(self):
+        runner = GymRunner()
+        assert runner.get_history() == []
+
+    def test_gym_runner_clear(self):
+        runner = GymRunner()
+        runner.clear()
+        assert runner.get_history() == []
+
+    def test_gym_runner_get_run_not_found(self):
+        runner = GymRunner()
+        assert runner.get_run("nonexistent") is None
+
+
+# ── Gym Endpoint Tests ───────────────────────────────────────────
+
+
+class TestGymEndpoints:
+    def test_gym_samples(self, client):
+        resp = client.get("/gym/samples")
+        assert resp.status_code == 200
+        samples = resp.json()
+        assert len(samples) >= 2  # at least the two built-in samples
+        assert samples[0]["name"].startswith("Mixed")
+        assert len(samples[0]["utterances"]) > 0
+
+    def test_gym_history_empty(self, client):
+        resp = client.get("/gym/history")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_gym_run_detail_not_found(self, client):
+        resp = client.get("/gym/run/nonexistent")
+        assert resp.status_code == 404
+
+    def test_gym_page_html(self, client):
+        resp = client.get("/gym")
+        assert resp.status_code == 200
+        assert "Model Gym" in resp.text
+        assert "backends" in resp.text
+
+    def test_gym_run_with_cli_echo(self, client):
+        """Run gym with echo/cat backend — fully local, no LLM needed."""
+        resp = client.post("/gym/run", json={
+            "backend": {
+                "name": "echo-test",
+                "backend": "cli",
+                "command": ["cat"],
+                "timeout_s": 5,
+            },
+            "utterances": [
+                {"text": "Button", "element": {"class_name": "Button"}, "navigation": "SWIPE_RIGHT"},
+            ],
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["backend_name"] == "echo-test"
+        assert data["success"]
+        assert data["latency_ms"] >= 0
+        # cat echoes back the prompt, so raw output should contain utterance text
+        assert "Button" in data["raw_output"]
+
+    def test_gym_compare_with_cli(self, client):
+        """Compare two CLI backends side-by-side."""
+        resp = client.post("/gym/compare", json={
+            "backends": [
+                {"name": "echo-1", "backend": "cli", "command": ["cat"], "timeout_s": 5},
+                {"name": "echo-2", "backend": "cli", "command": ["cat"], "timeout_s": 5},
+            ],
+            "utterances": [
+                {"text": "Image", "element": {"class_name": "ImageView"}, "navigation": "SWIPE_RIGHT"},
+            ],
+            "prompt_variants": [None],
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["backend_count"] == 2
+        assert data["prompt_variant_count"] == 1
+        assert len(data["results"]) == 2
+        assert all(r["success"] for r in data["results"])
+        assert data["run_id"]
+
+    def test_gym_history_after_run(self, client):
+        """History records gym runs."""
+        client.post("/gym/run", json={
+            "backend": {"name": "t", "backend": "cli", "command": ["cat"], "timeout_s": 5},
+            "utterances": [{"text": "X", "element": {}, "navigation": "TAP"}],
+        })
+        resp = client.get("/gym/history")
+        assert resp.status_code == 200
+        history = resp.json()
+        assert len(history) >= 1
+        assert history[-1]["utterance_count"] == 1
+
+    def test_gym_compare_multiple_prompts(self, client):
+        """Matrix: 1 backend x 2 prompt variants = 2 cells."""
+        resp = client.post("/gym/compare", json={
+            "backends": [
+                {"name": "echo", "backend": "cli", "command": ["cat"], "timeout_s": 5},
+            ],
+            "utterances": [{"text": "Test", "element": {}, "navigation": "TAP"}],
+            "prompt_variants": [None, "Be concise"],
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["prompt_variant_count"] == 2
+        assert len(data["results"]) == 2
+        labels = {r["prompt_label"] for r in data["results"]}
+        assert "default" in labels
+        assert "Be concise" in labels

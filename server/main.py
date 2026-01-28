@@ -52,6 +52,7 @@ from pydantic import BaseModel
 from analyzer import AccessibilityAnalyzer
 from device_registry import DeviceInfo, DeviceRegistry, device_registry
 from device_settings import DeviceSettings, device_settings
+from gym import GymCompareRequest, GymRunRequest, gym_runner
 from models import AnalysisRequest, AnalysisResponse, SkillCommand, SkillResult
 from session import SessionManager, session_manager
 from skills import SkillExecRequest, SkillExecResponse, SkillResultReport, skill_queue
@@ -145,6 +146,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     skill_queue.clear()
     device_registry.clear()
+    gym_runner.clear()
     unregister_mdns()
     logger.info("Server shutting down")
 
@@ -233,6 +235,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <a href="/session/export?format=markdown">Export Markdown</a>
   <a href="/session/export?format=json">Export JSON</a>
   <a href="/settings">Settings JSON</a>
+  <a href="/gym">Model Gym</a>
   <button class="refresh-btn" onclick="refresh()">Refresh</button>
   <button class="refresh-btn" onclick="toggleTts()" id="ttsBtn">Toggle TTS</button>
 </div>
@@ -749,6 +752,387 @@ async def device_pending():
 async def device_all():
     """Get all registered devices."""
     return [d.model_dump() for d in device_registry.get_all()]
+
+
+# ── Gym Endpoints ─────────────────────────────────────────────────
+
+
+@app.post("/gym/run", dependencies=[Depends(require_auth)])
+async def gym_run(request: GymRunRequest):
+    """
+    Run a single backend + prompt against an utterance batch.
+    Returns parsed issues, raw output, latency.
+    """
+    result = await gym_runner.run_single(request)
+    return result.model_dump()
+
+
+@app.post("/gym/compare", dependencies=[Depends(require_auth)])
+async def gym_compare(request: GymCompareRequest):
+    """
+    Run a matrix of backends x prompt variants.
+    Returns side-by-side comparison results.
+    """
+    summary = await gym_runner.run_compare(request)
+    return summary.model_dump()
+
+
+@app.get("/gym/history")
+async def gym_history(limit: int = Query(default=50)):
+    """Get past gym runs."""
+    return [r.model_dump() for r in gym_runner.get_history(limit)]
+
+
+@app.get("/gym/run/{run_id}")
+async def gym_run_detail(run_id: str):
+    """Get detailed results for a specific gym run."""
+    run = gym_runner.get_run(run_id)
+    if run is None:
+        return JSONResponse(status_code=404, content={"error": f"Run {run_id} not found"})
+    return run.model_dump()
+
+
+@app.get("/gym/samples")
+async def gym_samples():
+    """
+    Get sample utterance batches for gym testing.
+    Pulls from current session history if available, plus built-in examples.
+    """
+    samples = []
+
+    # Built-in sample: generic app with mixed issues
+    samples.append({
+        "name": "Mixed issues (built-in)",
+        "utterances": [
+            {"text": "Search. Button. Double tap to activate", "element": {"class_name": "android.widget.ImageButton", "content_description": "Search"}, "navigation": "SWIPE_RIGHT"},
+            {"text": "Image", "element": {"class_name": "android.widget.ImageView"}, "navigation": "SWIPE_RIGHT"},
+            {"text": "Button", "element": {"class_name": "android.widget.Button"}, "navigation": "SWIPE_RIGHT"},
+            {"text": "ic_menu_overflow", "element": {"class_name": "android.widget.ImageButton"}, "navigation": "SWIPE_RIGHT"},
+            {"text": "$49.99", "element": {"class_name": "android.widget.TextView"}, "navigation": "SWIPE_RIGHT"},
+        ],
+        "context": {"package_name": "com.example.shop", "activity_name": "ProductListActivity"},
+    })
+
+    # Built-in sample: login form
+    samples.append({
+        "name": "Login form (built-in)",
+        "utterances": [
+            {"text": "Edit text", "element": {"class_name": "android.widget.EditText"}, "navigation": "SWIPE_RIGHT"},
+            {"text": "Edit text", "element": {"class_name": "android.widget.EditText"}, "navigation": "SWIPE_RIGHT"},
+            {"text": "Button", "element": {"class_name": "android.widget.Button"}, "navigation": "SWIPE_RIGHT"},
+            {"text": "Forgot password?", "element": {"class_name": "android.widget.TextView", "is_clickable": True}, "navigation": "SWIPE_RIGHT"},
+        ],
+        "context": {"package_name": "com.example.app", "activity_name": "LoginActivity"},
+    })
+
+    # Pull from session history if available
+    current = session_manager.current
+    if current and current.events:
+        utterance_events = [
+            e.data for e in current.events
+            if e.event_type == "utterance" and "text" in e.data
+        ]
+        if utterance_events:
+            samples.append({
+                "name": f"Current session ({current.session_id})",
+                "utterances": utterance_events[:20],
+                "context": {},
+            })
+
+    return samples
+
+
+# ── Gym Dashboard ─────────────────────────────────────────────────
+
+GYM_HTML = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Model Gym</title>
+<style>
+body { font-family: -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #e0e0e0; }
+h1 { color: #8be9fd; }
+a { color: #8be9fd; }
+.section { background: #16213e; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.section h2 { margin-top: 0; color: #bd93f9; font-size: 16px; }
+label { display: block; margin: 8px 0 4px; font-size: 13px; color: #aaa; }
+input, textarea, select { width: 100%; padding: 8px; border: 1px solid #333; border-radius: 4px; background: #0f3460; color: #e0e0e0; font-family: monospace; font-size: 13px; box-sizing: border-box; }
+textarea { min-height: 80px; resize: vertical; }
+button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin: 4px; }
+.btn-primary { background: #8be9fd; color: #1a1a2e; font-weight: bold; }
+.btn-secondary { background: #44475a; color: #e0e0e0; }
+.btn-add { background: #50fa7b; color: #1a1a2e; font-size: 12px; padding: 6px 12px; }
+.btn-remove { background: #ff5555; color: white; font-size: 11px; padding: 4px 8px; }
+.backend-card { background: #0f3460; border: 1px solid #333; border-radius: 6px; padding: 12px; margin: 8px 0; }
+.results-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.results-table th, .results-table td { border: 1px solid #333; padding: 10px; text-align: left; vertical-align: top; }
+.results-table th { background: #0f3460; color: #bd93f9; }
+.cell-success { background: #1a3a2e; }
+.cell-fail { background: #3a1a1a; }
+.raw-output { max-height: 200px; overflow-y: auto; font-size: 11px; background: #0a0a1a; padding: 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+.stat { font-size: 12px; color: #aaa; }
+.loading { color: #f1fa8c; font-style: italic; }
+#status { margin: 12px 0; min-height: 24px; }
+</style>
+</head><body>
+<h1>Model Gym</h1>
+<p><a href="/">&larr; Dashboard</a></p>
+
+<div class="section">
+  <h2>Backends</h2>
+  <div id="backends"></div>
+  <button class="btn-add" onclick="addBackend('ollama')">+ Ollama</button>
+  <button class="btn-add" onclick="addBackend('api')">+ API</button>
+  <button class="btn-add" onclick="addBackend('cli')">+ CLI</button>
+</div>
+
+<div class="section">
+  <h2>Prompt Variants</h2>
+  <div id="prompts">
+    <div class="backend-card">
+      <label>Default system prompt (built-in)</label>
+      <input type="text" value="default" disabled>
+    </div>
+  </div>
+  <button class="btn-add" onclick="addPrompt()">+ Custom Prompt</button>
+</div>
+
+<div class="section">
+  <h2>Utterances</h2>
+  <label>Load sample:</label>
+  <select id="sample-select" onchange="loadSample()">
+    <option value="">-- Select sample --</option>
+  </select>
+  <label>Or paste JSON array:</label>
+  <textarea id="utterances" placeholder='[{"text": "Button", "element": {"class_name": "android.widget.Button"}, "navigation": "SWIPE_RIGHT"}]'></textarea>
+  <label>Context (optional JSON):</label>
+  <input id="context" placeholder='{"package_name": "com.example", "activity_name": "Main"}'>
+</div>
+
+<div>
+  <button class="btn-primary" onclick="runCompare()">Run Comparison</button>
+  <button class="btn-secondary" onclick="runSingle()">Run First Backend Only</button>
+</div>
+
+<div id="status"></div>
+<div id="results"></div>
+
+<div class="section" style="margin-top: 24px">
+  <h2>History</h2>
+  <div id="history">Loading...</div>
+</div>
+
+<script>
+let backendCount = 0;
+let promptCount = 0;
+let samples = [];
+
+function addBackend(type) {
+  backendCount++;
+  const id = backendCount;
+  const div = document.createElement('div');
+  div.className = 'backend-card';
+  div.id = 'backend-' + id;
+  let fields = '';
+  if (type === 'ollama') {
+    fields = `<label>Model</label><input id="b${id}-model" value="phi4:14b-q4_K_M" placeholder="model name">`;
+  } else if (type === 'api') {
+    fields = `<label>API URL</label><input id="b${id}-url" placeholder="https://api.openai.com/v1/chat/completions">
+      <label>Model</label><input id="b${id}-model" placeholder="gpt-4o">
+      <label>Headers (JSON)</label><input id="b${id}-headers" placeholder='{"Authorization": "Bearer sk-..."}'>
+      <label>Extra Body (JSON)</label><input id="b${id}-extra" placeholder="{}">`;
+  } else {
+    fields = `<label>Command (JSON array)</label><input id="b${id}-cmd" value='["claude", "--print"]' placeholder='["cmd", "arg1"]'>
+      <label>Timeout (seconds)</label><input id="b${id}-timeout" value="120">`;
+  }
+  div.innerHTML = `<strong>${type.toUpperCase()}</strong>
+    <button class="btn-remove" onclick="document.getElementById('backend-${id}').remove()" style="float:right">Remove</button>
+    <input type="hidden" id="b${id}-type" value="${type}">
+    <label>Name</label><input id="b${id}-name" value="${type}-${id}" placeholder="display name">
+    ${fields}`;
+  document.getElementById('backends').appendChild(div);
+}
+
+function addPrompt() {
+  promptCount++;
+  const id = promptCount;
+  const div = document.createElement('div');
+  div.className = 'backend-card';
+  div.id = 'prompt-' + id;
+  div.innerHTML = `<button class="btn-remove" onclick="document.getElementById('prompt-${id}').remove()" style="float:right">Remove</button>
+    <label>Custom system prompt</label>
+    <textarea id="p${id}-text" placeholder="You are an accessibility expert..."></textarea>`;
+  document.getElementById('prompts').appendChild(div);
+}
+
+function collectBackends() {
+  const backends = [];
+  document.querySelectorAll('[id^="backend-"]').forEach(card => {
+    const id = card.id.split('-')[1];
+    const type = document.getElementById('b'+id+'-type').value;
+    const cfg = { name: document.getElementById('b'+id+'-name').value, backend: type };
+    if (type === 'ollama') {
+      cfg.model = document.getElementById('b'+id+'-model').value;
+    } else if (type === 'api') {
+      cfg.api_url = document.getElementById('b'+id+'-url').value;
+      cfg.api_model = document.getElementById('b'+id+'-model').value;
+      try { cfg.api_headers = JSON.parse(document.getElementById('b'+id+'-headers').value || '{}'); } catch(e) { cfg.api_headers = {}; }
+      try { cfg.api_extra_body = JSON.parse(document.getElementById('b'+id+'-extra').value || '{}'); } catch(e) { cfg.api_extra_body = {}; }
+    } else {
+      try { cfg.command = JSON.parse(document.getElementById('b'+id+'-cmd').value || '[]'); } catch(e) { cfg.command = []; }
+      cfg.timeout_s = parseInt(document.getElementById('b'+id+'-timeout').value) || 120;
+    }
+    backends.push(cfg);
+  });
+  return backends;
+}
+
+function collectPrompts() {
+  const prompts = [null]; // default is always first
+  document.querySelectorAll('[id^="prompt-"]').forEach(card => {
+    const id = card.id.split('-')[1];
+    const text = document.getElementById('p'+id+'-text').value;
+    if (text.trim()) prompts.push(text.trim());
+  });
+  return prompts;
+}
+
+function getUtterances() {
+  try { return JSON.parse(document.getElementById('utterances').value); }
+  catch(e) { return []; }
+}
+
+function getContext() {
+  try { return JSON.parse(document.getElementById('context').value || 'null'); }
+  catch(e) { return null; }
+}
+
+async function runCompare() {
+  const backends = collectBackends();
+  if (backends.length === 0) { alert('Add at least one backend'); return; }
+  const utterances = getUtterances();
+  if (utterances.length === 0) { alert('Add utterances'); return; }
+
+  document.getElementById('status').innerHTML = '<span class="loading">Running comparison...</span>';
+  document.getElementById('results').innerHTML = '';
+
+  const resp = await fetch('/gym/compare', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      backends: backends,
+      utterances: utterances,
+      prompt_variants: collectPrompts(),
+      context: getContext(),
+    })
+  });
+  const data = await resp.json();
+  document.getElementById('status').innerHTML = `Run ${data.run_id} completed in ${data.total_latency_ms}ms`;
+  renderResults(data);
+  loadHistory();
+}
+
+async function runSingle() {
+  const backends = collectBackends();
+  if (backends.length === 0) { alert('Add at least one backend'); return; }
+  const utterances = getUtterances();
+  if (utterances.length === 0) { alert('Add utterances'); return; }
+
+  document.getElementById('status').innerHTML = '<span class="loading">Running...</span>';
+  const prompts = collectPrompts();
+
+  const resp = await fetch('/gym/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      backend: backends[0],
+      utterances: utterances,
+      prompt_override: prompts.length > 1 ? prompts[1] : null,
+      context: getContext(),
+    })
+  });
+  const cell = await resp.json();
+  document.getElementById('status').innerHTML = `Done in ${cell.latency_ms}ms`;
+  document.getElementById('results').innerHTML = renderCell(cell);
+  loadHistory();
+}
+
+function renderResults(data) {
+  if (!data.results || data.results.length === 0) {
+    document.getElementById('results').innerHTML = '<p>No results</p>';
+    return;
+  }
+  // Build matrix: rows = backends, cols = prompt variants
+  const backendNames = [...new Set(data.results.map(r => r.backend_name))];
+  const promptLabels = [...new Set(data.results.map(r => r.prompt_label))];
+
+  let html = '<table class="results-table"><thead><tr><th>Backend</th>';
+  promptLabels.forEach(p => { html += `<th>${p}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  backendNames.forEach(bn => {
+    html += `<tr><td><strong>${bn}</strong></td>`;
+    promptLabels.forEach(pl => {
+      const cell = data.results.find(r => r.backend_name === bn && r.prompt_label === pl);
+      html += cell ? `<td class="${cell.success ? 'cell-success' : 'cell-fail'}">${renderCell(cell)}</td>` : '<td>-</td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('results').innerHTML = html;
+}
+
+function renderCell(cell) {
+  const status = cell.success ? '&#10003;' : '&#10007; ' + cell.error;
+  return `<div><strong>${status}</strong></div>
+    <div class="stat">${cell.latency_ms}ms | ${cell.issues_found} issues | parse: ${cell.parse_success ? 'ok' : 'fail'}</div>
+    ${cell.issues.length > 0 ? '<div class="stat">' + cell.issues.map(i => i.severity + ': ' + (i.issue || i.utterance || '')).join('<br>') + '</div>' : ''}
+    <details><summary class="stat">Raw output</summary><div class="raw-output">${(cell.raw_output || '').replace(/</g,'&lt;')}</div></details>`;
+}
+
+async function loadSamples() {
+  const resp = await fetch('/gym/samples');
+  samples = await resp.json();
+  const sel = document.getElementById('sample-select');
+  samples.forEach((s, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = s.name + ' (' + s.utterances.length + ' utterances)';
+    sel.appendChild(opt);
+  });
+}
+
+function loadSample() {
+  const idx = document.getElementById('sample-select').value;
+  if (idx === '') return;
+  const s = samples[parseInt(idx)];
+  document.getElementById('utterances').value = JSON.stringify(s.utterances, null, 2);
+  if (s.context && Object.keys(s.context).length > 0) {
+    document.getElementById('context').value = JSON.stringify(s.context);
+  }
+}
+
+async function loadHistory() {
+  const resp = await fetch('/gym/history?limit=10');
+  const runs = await resp.json();
+  if (runs.length === 0) {
+    document.getElementById('history').innerHTML = 'No runs yet';
+    return;
+  }
+  document.getElementById('history').innerHTML = runs.map(r =>
+    `<div class="stat">${r.run_id} | ${new Date(r.timestamp*1000).toLocaleTimeString()} | ${r.backend_count} backends x ${r.prompt_variant_count} prompts | ${r.total_latency_ms}ms</div>`
+  ).join('');
+}
+
+// Init
+loadSamples();
+loadHistory();
+addBackend('ollama'); // start with one Ollama backend
+</script>
+</body></html>"""
+
+
+@app.get("/gym", response_class=HTMLResponse)
+async def gym_page():
+    """Model Gym — compare LLM backends and prompt variants."""
+    return GYM_HTML
 
 
 # ── Legacy command endpoint (kept for backwards compat) ───────────
