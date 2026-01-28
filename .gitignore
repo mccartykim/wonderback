@@ -23,6 +23,9 @@ talkback/build/
 utils/build/
 agent/build/
 
+## Nix
+result
+
 ## Python
 __pycache__/
 *.pyc

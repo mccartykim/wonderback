@@ -30,7 +30,13 @@
           uvicorn
           pydantic
           pyyaml
-          # ollama and zeroconf may need to be installed via pip
+          pytest
+          httpx        # needed by TestClient
+          websockets   # needed by FastAPI WebSocket
+          anyio        # async test support
+          pytest-asyncio
+          # ollama and zeroconf: install via pip in venv if needed
+          # (ollama has binary deps, zeroconf needs ifaddr)
         ]);
 
       in {
@@ -63,6 +69,13 @@
             export JAVA_HOME="${pkgs.jdk17}"
             export PATH="$ANDROID_HOME/platform-tools:$PATH"
 
+            # Gradle needs local.properties to find the SDK
+            if [ ! -f local.properties ]; then
+              echo "sdk.dir=$ANDROID_HOME" > local.properties
+              echo "Created local.properties with sdk.dir=$ANDROID_HOME"
+            fi
+
+            echo ""
             echo "TalkBack Agent Development Environment"
             echo "======================================="
             echo "Android SDK: $ANDROID_HOME"
@@ -70,33 +83,102 @@
             echo "Gradle:      $(gradle --version 2>/dev/null | grep '^Gradle' || echo 'available')"
             echo "Python:      $(python3 --version)"
             echo ""
-            echo "Commands:"
-            echo "  gradle assemblePhoneDebug    Build TalkBack APK"
-            echo "  cd server && python main.py  Start analysis server"
+            echo "Workflows:"
+            echo "  ./build.sh                     Full Android build + Python tests"
+            echo "  ./build.sh --android-only      Just Gradle build"
+            echo "  ./build.sh --server-only       Just Python tests"
+            echo "  cd server && python main.py    Start analysis server"
             echo "  adb reverse tcp:8080 tcp:8080  Forward port for ADB connection"
-            echo "  bd status                    Check beads task status"
+            echo "  bd --no-db list                Check beads task status"
           '';
         };
 
-        # Server package
+        # Server package — run the analysis server
         packages.server = pkgs.writeShellApplication {
           name = "talkback-agent-server";
           runtimeInputs = [ pythonEnv ];
           text = ''
-            cd ${self}/server
+            # Find server dir relative to script invocation or use REPO_ROOT
+            SERVER_DIR="''${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/server"
+            if [ ! -f "$SERVER_DIR/main.py" ]; then
+              echo "Error: Cannot find server/main.py. Run from the repo root or set REPO_ROOT."
+              exit 1
+            fi
+            cd "$SERVER_DIR"
+
+            # Install pip-only deps if needed
+            if ! python -c "import ollama" 2>/dev/null; then
+              echo "Installing ollama + zeroconf..."
+              pip install --quiet ollama zeroconf 2>/dev/null || true
+            fi
+
             exec python main.py "$@"
           '';
         };
 
-        # Quick setup script
+        # Run Python server tests
+        packages.test-server = pkgs.writeShellApplication {
+          name = "talkback-agent-test-server";
+          runtimeInputs = [ pythonEnv ];
+          text = ''
+            SERVER_DIR="''${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}/server"
+            cd "$SERVER_DIR"
+            exec python -m pytest test_server.py -v "$@"
+          '';
+        };
+
+        # Quick ADB setup for device connection
         packages.setup-adb = pkgs.writeShellApplication {
           name = "talkback-agent-setup";
-          runtimeInputs = [ androidSdk ];
+          runtimeInputs = with pkgs; [ androidSdk ];
           text = ''
-            echo "Setting up ADB reverse port forwarding..."
-            adb reverse tcp:8080 tcp:8080
-            echo "Done! Android device will connect to localhost:8080"
-            echo "which tunnels to this machine's port 8080 over USB."
+            PORT="''${1:-8080}"
+            echo "Setting up ADB reverse port forwarding on port $PORT..."
+            adb reverse "tcp:$PORT" "tcp:$PORT"
+            echo "Done! Android device will connect to localhost:$PORT"
+            echo "which tunnels to this machine's port $PORT over USB."
+          '';
+        };
+
+        # Full dev build: compile Android + run Python tests
+        packages.dev-build = pkgs.writeShellApplication {
+          name = "talkback-agent-dev-build";
+          runtimeInputs = with pkgs; [ androidSdk jdk17 gradle pythonEnv git ];
+          text = ''
+            REPO="''${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+            cd "$REPO"
+
+            export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
+            export ANDROID_SDK_ROOT="$ANDROID_HOME"
+            export JAVA_HOME="${pkgs.jdk17}"
+
+            # Ensure local.properties
+            echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+            echo "=== Android Build ==="
+            echo "Java: $(java -version 2>&1 | head -1)"
+            echo "SDK:  $ANDROID_HOME"
+
+            MODE="''${1:---full}"
+            case "$MODE" in
+              --check)
+                gradle compilePhoneDebugKotlin compilePhoneDebugJavaWithJavac --no-daemon --warning-mode all
+                ;;
+              --full|*)
+                gradle assemblePhoneDebug --no-daemon --warning-mode all
+                echo ""
+                echo "APKs:"
+                find . -name "*.apk" -newer local.properties 2>/dev/null || echo "(none found)"
+                ;;
+            esac
+
+            echo ""
+            echo "=== Python Tests ==="
+            cd "$REPO/server"
+            python -m pytest test_server.py -v
+
+            echo ""
+            echo "All done."
           '';
         };
       }
