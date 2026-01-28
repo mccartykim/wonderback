@@ -93,6 +93,30 @@ class HttpServerConnection(
             }
         }
 
+    override suspend fun fetchSettings(currentRevision: Int): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val request = Request.Builder()
+                    .url("$baseUrl/settings?revision=$currentRevision")
+                    .get()
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    when (response.code) {
+                        200 -> response.body?.string()
+                        304 -> null  // No changes since last revision
+                        else -> {
+                            Log.w(TAG, "Settings fetch failed: ${response.code}")
+                            null
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Settings fetch failed: ${e.message}")
+                null
+            }
+        }
+
     override fun close() {
         client.dispatcher.executorService.shutdown()
         client.connectionPool.evictAll()

@@ -8,6 +8,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.android.accessibility.talkback.agent.connection.ConnectionManager
+import com.google.android.accessibility.talkback.agent.connection.ServerSettingsPoller
 import com.google.android.accessibility.talkback.agent.model.*
 import com.google.android.accessibility.talkback.agent.ui.IssueListActivity
 import kotlinx.coroutines.*
@@ -24,6 +25,7 @@ class AgentClientService : Service(), SpeechCapture.SpeechCaptureListener,
 
     private lateinit var config: AgentConfig
     private lateinit var connectionManager: ConnectionManager
+    private lateinit var settingsPoller: ServerSettingsPoller
     private val utteranceBuffer = ArrayDeque<UtteranceEvent>()
     private val recentIssues = mutableListOf<Issue>()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -34,6 +36,7 @@ class AgentClientService : Service(), SpeechCapture.SpeechCaptureListener,
         config = AgentConfig.getInstance(this)
         connectionManager = ConnectionManager(this, config)
         connectionManager.addListener(this)
+        settingsPoller = ServerSettingsPoller(config)
 
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildStatusNotification("Initializing..."))
@@ -69,6 +72,7 @@ class AgentClientService : Service(), SpeechCapture.SpeechCaptureListener,
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        settingsPoller.stop()
         SpeechCapture.getInstance().removeListener(this)
         connectionManager.removeListener(this)
         connectionManager.destroy()
@@ -99,10 +103,22 @@ class AgentClientService : Service(), SpeechCapture.SpeechCaptureListener,
         info: String
     ) {
         val statusText = when (state) {
-            ConnectionManager.ConnectionState.CONNECTED -> "Connected: $info"
+            ConnectionManager.ConnectionState.CONNECTED -> {
+                // Start polling for server-controlled settings
+                connectionManager.currentConnection?.let { conn ->
+                    settingsPoller.start(conn, scope)
+                }
+                "Connected: $info"
+            }
             ConnectionManager.ConnectionState.CONNECTING -> "Connecting..."
-            ConnectionManager.ConnectionState.RECONNECTING -> "Reconnecting..."
-            ConnectionManager.ConnectionState.DISCONNECTED -> "Disconnected"
+            ConnectionManager.ConnectionState.RECONNECTING -> {
+                settingsPoller.stop()
+                "Reconnecting..."
+            }
+            ConnectionManager.ConnectionState.DISCONNECTED -> {
+                settingsPoller.stop()
+                "Disconnected"
+            }
         }
         updateNotification(statusText)
     }

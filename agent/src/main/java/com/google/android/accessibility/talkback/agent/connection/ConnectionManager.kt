@@ -20,7 +20,12 @@ class ConnectionManager(
     private val context: Context,
     private val config: AgentConfig
 ) {
-    private var currentConnection: ServerConnection? = null
+    private var _currentConnection: ServerConnection? = null
+
+    /** The active server connection, or null if disconnected. */
+    val currentConnection: ServerConnection?
+        get() = _currentConnection
+
     private var connectionState = ConnectionState.DISCONNECTED
     private val listeners = mutableListOf<ConnectionListener>()
     private var reconnectJob: Job? = null
@@ -52,7 +57,7 @@ class ConnectionManager(
         }
 
         if (connection != null) {
-            currentConnection = connection
+            _currentConnection = connection
             updateState(ConnectionState.CONNECTED)
             Log.i(TAG, "Connected via: ${connection.description}")
             return true
@@ -67,7 +72,7 @@ class ConnectionManager(
      * Send analysis request to server.
      */
     suspend fun analyze(request: AnalysisRequest): AnalysisResponse {
-        val conn = currentConnection ?: throw IOException("Not connected to server")
+        val conn = _currentConnection ?: throw IOException("Not connected to server")
 
         return try {
             conn.analyze(request)
@@ -84,8 +89,8 @@ class ConnectionManager(
      */
     fun disconnect() {
         reconnectJob?.cancel()
-        currentConnection?.close()
-        currentConnection = null
+        _currentConnection?.close()
+        _currentConnection = null
         updateState(ConnectionState.DISCONNECTED)
     }
 

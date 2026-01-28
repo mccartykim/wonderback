@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 import main as srv
 from analyzer import AccessibilityAnalyzer
+from device_settings import DeviceSettings, DeviceSettingsManager, device_settings
 from main import app
 from models import (
     AnalysisRequest,
@@ -21,6 +22,8 @@ from models import (
     UtteranceEvent,
 )
 from prompt import ACCESSIBILITY_AGENT_PROMPT, build_analysis_prompt
+from session import Session, SessionManager, session_manager
+from skills import SkillExecRequest, SkillQueue, skill_queue
 
 
 # ── Fixtures ──────────────────────────────────────────────────────
@@ -469,3 +472,242 @@ class TestEndpoints:
             },
         )
         assert resp.status_code == 200
+
+
+# ── Device Settings Tests ────────────────────────────────────────
+
+
+class TestDeviceSettings:
+    def test_default_settings(self):
+        s = DeviceSettings()
+        assert s.tts_suppressed is False
+        assert s.gesture_injection_enabled is False
+        assert s.trigger_mode == "SCREEN_CHANGE"
+        assert s.buffer_size == 20
+        assert s.revision == 0
+
+    def test_settings_manager_update(self):
+        mgr = DeviceSettingsManager()
+        result = mgr.update(tts_suppressed=True)
+        assert result.tts_suppressed is True
+        assert result.revision == 1
+
+    def test_settings_manager_no_change(self):
+        mgr = DeviceSettingsManager()
+        mgr.update(tts_suppressed=False)  # same as default
+        assert mgr.current.revision == 0  # no change, no bump
+
+    def test_settings_manager_multiple_updates(self):
+        mgr = DeviceSettingsManager()
+        mgr.update(tts_suppressed=True, buffer_size=10)
+        assert mgr.current.revision == 1
+        assert mgr.current.tts_suppressed is True
+        assert mgr.current.buffer_size == 10
+
+    def test_settings_manager_get_if_newer(self):
+        mgr = DeviceSettingsManager()
+        assert mgr.get_if_newer(0) is None  # no changes yet
+        mgr.update(tts_suppressed=True)
+        assert mgr.get_if_newer(0) is not None
+        assert mgr.get_if_newer(1) is None  # already up to date
+
+    def test_settings_ignores_unknown_keys(self):
+        mgr = DeviceSettingsManager()
+        mgr.update(nonexistent_key="value")
+        assert mgr.current.revision == 0  # nothing changed
+
+    def test_settings_ignores_revision_override(self):
+        mgr = DeviceSettingsManager()
+        mgr.update(revision=999, tts_suppressed=True)
+        assert mgr.current.revision == 1  # not 999
+
+
+class TestSettingsEndpoints:
+    def test_get_settings(self, client):
+        resp = client.get("/settings")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "tts_suppressed" in data
+        assert "revision" in data
+
+    def test_patch_settings(self, client):
+        resp = client.patch("/settings", json={"tts_suppressed": True})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["tts_suppressed"] is True
+        assert data["revision"] >= 1
+
+    def test_tts_toggle_suppress(self, client):
+        resp = client.post("/settings/tts?suppress=true")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["tts_suppressed"] is True
+
+    def test_tts_toggle_enable(self, client):
+        client.post("/settings/tts?suppress=true")
+        resp = client.post("/settings/tts?suppress=false")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["tts_suppressed"] is False
+
+    def test_health_includes_tts_status(self, client):
+        resp = client.get("/health")
+        data = resp.json()
+        assert "tts_suppressed" in data
+        assert "settings_revision" in data
+
+
+# ── Session Endpoint Tests ───────────────────────────────────────
+
+
+class TestSessionEndpoints:
+    def test_session_auto_created(self, client):
+        # Start a fresh session so we don't pick up state from prior tests
+        client.post("/session/start?session_id=auto_test")
+        resp = client.get("/session")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_id"] == "auto_test"
+        assert data["total_utterances"] == 0
+
+    def test_session_start(self, client):
+        resp = client.post("/session/start")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "session_id" in data
+
+    def test_session_start_with_id(self, client):
+        resp = client.post("/session/start?session_id=test123")
+        assert resp.status_code == 200
+        assert resp.json()["session_id"] == "test123"
+
+    def test_session_note(self, client):
+        resp = client.post("/session/note?note=testing+note")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+    def test_session_export_json(self, client):
+        resp = client.get("/session/export?format=json")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "session" in data
+        assert "issues" in data
+        assert "events" in data
+
+    def test_session_export_markdown(self, client):
+        resp = client.get("/session/export?format=markdown")
+        assert resp.status_code == 200
+        assert "Accessibility Audit" in resp.text
+
+    def test_session_end(self, client):
+        client.post("/session/start?session_id=end_test")
+        resp = client.post("/session/end?save=false")
+        assert resp.status_code == 200
+
+    def test_session_history(self, client):
+        resp = client.get("/session/history")
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+
+# ── Skill Endpoint Tests ────────────────────────────────────────
+
+
+class TestSkillEndpoints:
+    def test_skill_pending_empty(self, client):
+        resp = client.get("/skill/pending")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_skill_result_not_found(self, client):
+        resp = client.post(
+            "/skill/result",
+            json={"request_id": "nonexistent", "success": True, "message": "done"},
+        )
+        assert resp.status_code == 404
+
+    def test_skill_history_empty(self, client):
+        resp = client.get("/skill/history")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_skill_history_with_limit(self, client):
+        resp = client.get("/skill/history?limit=10")
+        assert resp.status_code == 200
+
+
+# ── Session Model Tests ─────────────────────────────────────────
+
+
+class TestSessionModel:
+    def test_session_creation(self):
+        session = Session("test_session")
+        assert session.session_id == "test_session"
+        assert session.events == []
+        assert session.issues == []
+
+    def test_session_add_note(self):
+        session = Session("test")
+        session.add_note("This is a test")
+        assert len(session.events) == 1
+        assert session.events[0].event_type == "note"
+        assert session.events[0].data["text"] == "This is a test"
+
+    def test_session_record_skill(self):
+        session = Session("test")
+        session.record_skill("NavigateTo", True, "Found element")
+        assert len(session.events) == 1
+        assert session.events[0].event_type == "skill"
+        assert session.events[0].data["success"] is True
+
+    def test_session_summary(self):
+        session = Session("test")
+        summary = session.get_summary()
+        assert summary.session_id == "test"
+        assert summary.total_utterances == 0
+        assert summary.total_issues == 0
+
+    def test_session_export_json(self):
+        session = Session("test")
+        session.add_note("note 1")
+        result = json.loads(session.export_json())
+        assert "session" in result
+        assert "events" in result
+        assert len(result["events"]) == 1
+
+    def test_session_export_markdown(self):
+        session = Session("test")
+        md = session.export_markdown()
+        assert "# Accessibility Audit: test" in md
+
+    def test_session_manager_lifecycle(self):
+        mgr = SessionManager()
+        s1 = mgr.current
+        assert s1 is not None
+
+        s2 = mgr.start_new("session2")
+        assert s2.session_id == "session2"
+        assert mgr.current is s2
+
+        summary = mgr.end_current()
+        assert summary is not None
+        assert summary.session_id == "session2"
+        assert len(mgr.get_history()) >= 1
+
+
+# ── Skill Queue Tests ───────────────────────────────────────────
+
+
+class TestSkillQueue:
+    def test_empty_pending(self):
+        q = SkillQueue()
+        assert q.get_pending() == []
+
+    def test_empty_history(self):
+        q = SkillQueue()
+        assert q.get_history() == []
+
+    def test_clear(self):
+        q = SkillQueue()
+        q.clear()  # should not raise
+        assert q.get_pending() == []

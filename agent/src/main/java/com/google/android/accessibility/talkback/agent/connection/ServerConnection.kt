@@ -19,6 +19,13 @@ interface ServerConnection {
     /** Send a raw command to the server (for agent skill API). */
     suspend fun sendCommand(endpoint: String, payload: String): String
 
+    /**
+     * Fetch device settings from the server.
+     * Returns the raw JSON response, or null if no update is available.
+     * @param currentRevision Pass the last known revision to get changes only.
+     */
+    suspend fun fetchSettings(currentRevision: Int = 0): String?
+
     /** Close the connection. */
     fun close()
 }
