@@ -13,7 +13,7 @@ dependencies {
 }
 
 buildscript {
-    ext.kotlin_version = "1.8.0"
+    ext.kotlin_version = '2.2.10'
     repositories {
         mavenCentral()
         google()
@@ -26,7 +26,7 @@ buildscript {
         // Gradle (used to drive the build) be a certain version or above. The
         // correspondence is tracked here:
         // https://developer.android.com/build/releases/gradle-plugin#updating-gradle
-        classpath 'com.android.tools.build:gradle:8.13.2'
+        classpath 'com.android.tools.build:gradle:8.2.0'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }

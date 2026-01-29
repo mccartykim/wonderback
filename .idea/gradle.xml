@@ -6,6 +6,22 @@
         <option name="testRunner" value="CHOOSE_PER_TEST" />
         <option name="externalProjectPath" value="$PROJECT_DIR$" />
         <option name="gradleJvm" value="#GRADLE_LOCAL_JAVA_HOME" />
+        <option name="modules">
+          <set>
+            <option value="$PROJECT_DIR$" />
+            <option value="$PROJECT_DIR$/braille/brailledisplay" />
+            <option value="$PROJECT_DIR$/braille/brailledisplayanalytics" />
+            <option value="$PROJECT_DIR$/braille/brailleime" />
+            <option value="$PROJECT_DIR$/braille/brailleimeanalytics" />
+            <option value="$PROJECT_DIR$/braille/brltty" />
+            <option value="$PROJECT_DIR$/braille/common" />
+            <option value="$PROJECT_DIR$/braille/interfaces" />
+            <option value="$PROJECT_DIR$/braille/translate" />
+            <option value="$PROJECT_DIR$/proguard" />
+            <option value="$PROJECT_DIR$/talkback" />
+            <option value="$PROJECT_DIR$/utils" />
+          </set>
+        </option>
       </GradleProjectSettings>
     </option>
   </component>
