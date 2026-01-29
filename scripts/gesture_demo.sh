@@ -38,13 +38,14 @@ execute_gesture() {
         -H "X-Agent-Token: $TOKEN" \
         -d "{\"skill_name\":\"$gesture\",\"parameters\":{},\"timeout_ms\":5000}")
     
-    success=$(echo "$result" | python3 -c "import sys, json; print(json.load(sys.stdin)['success'])")
-    elapsed=$(echo "$result" | python3 -c "import sys, json; print(json.load(sys.stdin)['elapsed_ms'])")
+    # Parse JSON once to avoid multiple python calls
+    parsed=$(echo "$result" | python3 -c "import sys, json; r=json.load(sys.stdin); print(f\"{r['success']}|{r.get('elapsed_ms',0)}|{r.get('message','')}\")") 
     
-    if [ "$success" = "True" ]; then
+    IFS='|' read -r success elapsed message <<< "$parsed"
+    
+    if [ "$success" = "true" ]; then
         echo " ✅ (${elapsed}ms)"
     else
-        message=$(echo "$result" | python3 -c "import sys, json; print(json.load(sys.stdin)['message'])")
         echo " ❌ $message"
     fi
     

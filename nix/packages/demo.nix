@@ -175,13 +175,17 @@ EOF
     adb shell "run-as com.wonderback.talkback cp /data/local/tmp/talkback_agent_config.xml /data/data/com.wonderback.talkback/shared_prefs/talkback_agent_config.xml"
     adb shell "run-as com.wonderback.talkback chmod 660 /data/data/com.wonderback.talkback/shared_prefs/talkback_agent_config.xml"
     
-    # Restart TalkBack to pick up new config
-    echo "Restarting TalkBack to apply agent configuration..."
-    adb shell settings put secure enabled_accessibility_services null
-    sleep 1
-    adb shell settings put secure enabled_accessibility_services \
-      com.wonderback.talkback/com.google.android.marvin.talkback.TalkBackService
-    sleep 2
+    # Only restart TalkBack if we just installed it (avoid ANR on already-running service)
+    if [ "$TALKBACK_INSTALLED" = true ]; then
+      echo "Restarting TalkBack to apply agent configuration..."
+      adb shell settings put secure enabled_accessibility_services null
+      sleep 1
+      adb shell settings put secure enabled_accessibility_services \
+        com.wonderback.talkback/com.google.android.marvin.talkback.TalkBackService
+      sleep 2
+    else
+      echo "TalkBack already running, skipping restart to avoid ANR"
+    fi
     
     # Give TalkBack time to start (longer if just installed)
     if [ "$TALKBACK_INSTALLED" = true ]; then
