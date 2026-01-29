@@ -1,0 +1,23 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  workers: 1
+
+model:
+  name: "phi4:14b-q4_K_M"
+  options:
+    temperature: 0.3
+    num_predict: 2048
+
+analysis:
+  buffer_size: 20
+  trigger_modes:
+    - screen_change
+    - buffer_full
+
+discovery:
+  mdns_enabled: true
+  service_name: "TalkBack Agent Server"
+
+logging:
+  level: "info"
