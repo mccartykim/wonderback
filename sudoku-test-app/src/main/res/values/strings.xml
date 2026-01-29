@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sudoku Test</string>
+    <string name="header_text">You have to solve this sudoku</string>
+    <string name="user_prompt">I am a blind/low-vision user using a screen reader. Help me solve this puzzle.</string>
+    <string name="solve_button">Solve Puzzle</string>
+    <string name="cell_description">Cell at row %1$d, column %2$d</string>
+    <string name="cell_value">Value %1$d</string>
+    <string name="cell_empty">Empty cell</string>
+    <string name="puzzle_solved">Puzzle solved!</string>
+    <string name="puzzle_incomplete">Puzzle is incomplete or incorrect</string>
+    <string name="number_selected">Selected number %1$d</string>
+</resources>

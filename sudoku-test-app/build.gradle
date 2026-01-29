@@ -1,0 +1,76 @@
+// Sudoku Test App for TalkBack Accessibility Testing
+buildscript {
+    ext.kotlin_version = "1.8.0"
+    ext.compose_version = "1.4.0"  // Compatible with Kotlin 1.8.0
+    repositories {
+        mavenCentral()
+        google()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.3.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+repositories {
+    mavenCentral()
+    google()
+}
+
+android {
+    namespace 'com.wonderback.sudoku'
+    compileSdkVersion 34
+
+    buildFeatures {
+        buildConfig = true
+        compose = true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.4.0"  // Must match Kotlin 1.8.0
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    defaultConfig {
+        applicationId = "com.wonderback.sudoku"
+        minSdkVersion = 26
+        targetSdkVersion = 34
+        versionCode = 1
+        versionName = "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = false
+        }
+        debug {
+            applicationIdSuffix = ".debug"
+        }
+    }
+}
+
+dependencies {
+    // Jetpack Compose
+    implementation platform('androidx.compose:compose-bom:2023.05.01')
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.material:material'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.activity:activity-compose:1.7.2'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+
+    // Core Android
+    implementation 'androidx.core:core-ktx:1.10.1'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.1'
+}
