@@ -2845,4 +2845,7 @@ Description: Explain that the feature is enabled for all images. [CHAR_LIMIT=NON
     Description: The pattern looks like "TalkBack > Settings > Customize menus > Customize reading controls"; the term "TalkBack" does not need to translate. [CHAR LIMIT=NONE]
   -->
   <string name="search_summary_3_levels">TalkBack > Settings <xliff:g id="level2_title" example="Customize menus">> %1$s</xliff:g> > <xliff:g id="level3_title" example="Customize reading control">%2$s</xliff:g></string>
+
+  <!-- Accessibility font family -->
+  <string name="accessibility_font">sans-serif</string>
 </resources>

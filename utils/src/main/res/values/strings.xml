@@ -135,4 +135,7 @@
     <string name="function_on">Spoken feedback is on</string>
     <!-- Announced when toggle voice feedback is off.[CHAR_LIMIT=NONE] -->
     <string name="function_off">Spoken feedback is off</string>
+
+    <!-- Template for announcing text removal. -->
+    <string name="template_text_removed">Removed %1$s</string>
 </resources>

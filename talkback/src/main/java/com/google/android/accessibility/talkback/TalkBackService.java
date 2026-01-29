@@ -1452,7 +1452,7 @@ public class TalkBackService extends AccessibilityService
     // Initialize TalkBack Agent subsystem for accessibility analysis
     try {
       agentManager =
-          com.google.android.accessibility.talkback.agent.AgentManager.getInstance(this);
+          new com.google.android.accessibility.talkback.agent.AgentManager(this);
       agentManager.initialize();
     } catch (Exception e) {
       LogUtils.e(TAG, "Failed to initialize AgentManager: %s", e.getMessage());

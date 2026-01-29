@@ -24,8 +24,10 @@
           platformVersions = [ "34" ];
           includeNDK = true;
           ndkVersions = [ "21.4.7075529" ];
-          includeEmulator = false;
-          includeSystemImages = false;
+          includeEmulator = true;  # Enable for TalkBack agent testing
+          includeSystemImages = true;  # Enable for AVD support
+          systemImageTypes = [ "google_apis" "google_apis_playstore" ];  # google_apis for userdebug (root access)
+          abiVersions = [ "x86_64" ];  # x86_64 for KVM acceleration
           includeSources = false;
         };
 

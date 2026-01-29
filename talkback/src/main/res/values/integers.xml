@@ -31,4 +31,8 @@
     <!-- For finish buttons in training. -->
     <item name="training_finish_button_0" type="id" />
     <item name="training_finish_button_1" type="id" />
+
+    <!-- Touch slop multipliers for gestures -->
+    <integer name="config_slop_default_multiplier">2</integer>
+    <integer name="config_passthrough_slop_multiplier">3</integer>
 </resources>
