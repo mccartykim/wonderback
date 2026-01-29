@@ -5,6 +5,9 @@ ext {
 }
 
 android {
+    buildFeatures {
+        buildConfig = true
+    }
     compileSdkVersion = 34
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
