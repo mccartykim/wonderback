@@ -141,24 +141,44 @@ class SkillPoller(
             }
             // Direct gesture injection commands
             "swipe_right" -> {
-                agent.gesture.swipeRight()
-                return SkillResult.success("Swiped right (TalkBack next)")
+                val success = agent.gesture.swipeRight()
+                return if (success) {
+                    SkillResult.success("Swiped right (TalkBack next)")
+                } else {
+                    SkillResult.failure("Failed to dispatch swipe_right gesture")
+                }
             }
             "swipe_left" -> {
-                agent.gesture.swipeLeft()
-                return SkillResult.success("Swiped left (TalkBack previous)")
+                val success = agent.gesture.swipeLeft()
+                return if (success) {
+                    SkillResult.success("Swiped left (TalkBack previous)")
+                } else {
+                    SkillResult.failure("Failed to dispatch swipe_left gesture")
+                }
             }
             "swipe_up" -> {
-                agent.gesture.swipeUp()
-                return SkillResult.success("Swiped up")
+                val success = agent.gesture.swipeUp()
+                return if (success) {
+                    SkillResult.success("Swiped up")
+                } else {
+                    SkillResult.failure("Failed to dispatch swipe_up gesture")
+                }
             }
             "swipe_down" -> {
-                agent.gesture.swipeDown()
-                return SkillResult.success("Swiped down")
+                val success = agent.gesture.swipeDown()
+                return if (success) {
+                    SkillResult.success("Swiped down")
+                } else {
+                    SkillResult.failure("Failed to dispatch swipe_down gesture")
+                }
             }
             "double_tap" -> {
-                agent.gesture.doubleTapCenter()
-                return SkillResult.success("Double tapped (TalkBack activate)")
+                val success = agent.gesture.doubleTapCenter()
+                return if (success) {
+                    SkillResult.success("Double tapped (TalkBack activate)")
+                } else {
+                    SkillResult.failure("Failed to dispatch double_tap gesture")
+                }
             }
             "tap" -> {
                 val x = params.get("x")?.asFloat ?: return SkillResult.failure("Missing x coordinate")
