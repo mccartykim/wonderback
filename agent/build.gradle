@@ -2,6 +2,16 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 apply from: "../shared.gradle"
 
+android {
+    namespace 'com.google.android.accessibility.talkback.agent'
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+    defaultConfig {
+        buildConfigField("String", "APPLICATION_ID", '"' + talkbackApplicationId + '"')
+    }
+}
+
 dependencies {
     implementation project(':utils')
 

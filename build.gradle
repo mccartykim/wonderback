@@ -26,7 +26,7 @@ buildscript {
         // Gradle (used to drive the build) be a certain version or above. The
         // correspondence is tracked here:
         // https://developer.android.com/build/releases/gradle-plugin#updating-gradle
-        classpath 'com.android.tools.build:gradle:8.2.0'
+        classpath 'com.android.tools.build:gradle:8.13.2'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -40,6 +40,11 @@ allprojects {
 
 android {
     namespace 'com.wonderback.talkback'
+    packagingOptions {
+        resources {
+            excludes += ['LICENSE', 'README']
+        }
+    }
     defaultConfig {
         applicationId talkbackApplicationId
         versionName talkbackVersionName + "-" + BUILD_TIMESTAMP
@@ -48,13 +53,9 @@ android {
         testInstrumentationRunner 'android.test.InstrumentationTestRunner'
         multiDexEnabled true
     }
-    packagingOptions {
-        exclude 'LICENSE'
-        exclude 'README'
-    }
-    lintOptions {
-        checkReleaseBuilds false
+    lint {
         abortOnError false
+        checkReleaseBuilds false
     }
     productFlavors {
         phone {

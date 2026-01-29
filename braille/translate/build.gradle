@@ -2,6 +2,10 @@ apply plugin: 'com.android.library'
 apply from: "../../shared.gradle"
 
 android {
+    namespace 'com.google.android.accessibility.braille.translate'
+}
+
+android {
     ndkVersion "21.4.7075529"
     externalNativeBuild {
         ndkBuild {
