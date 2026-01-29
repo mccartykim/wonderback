@@ -8,6 +8,16 @@ This demo shows the agent in action solving Sudoku using only accessibility info
 
 ## Quick Start (2 Commands)
 
+### Option 1: Using Nix (Recommended)
+```bash
+# 1. Start emulator with GUI
+nix run .#start-emulator
+
+# 2. Run demo (agent will interact with visible GUI)
+nix run .#demo
+```
+
+### Option 2: Direct Scripts
 ```bash
 # 1. Start emulator with GUI
 ./agents/start_emulator_gui.sh
@@ -69,6 +79,19 @@ Found number 5 button at (540, 1059)
 
 ### Adjust the Speed
 
+**Using Nix:**
+```bash
+# Slower (3 second delays - better for presentations)
+nix run .#demo 3.0
+
+# Default (2 second delays - good balance)
+nix run .#demo
+
+# Faster (1 second delays - quick demo)
+nix run .#demo 1.0
+```
+
+**Using Scripts:**
 ```bash
 # Slower (3 second delays - better for presentations)
 ./agents/demo.sh 3.0
