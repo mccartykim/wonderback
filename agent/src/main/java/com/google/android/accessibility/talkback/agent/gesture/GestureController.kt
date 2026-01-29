@@ -267,27 +267,29 @@ class GestureController(
      * Returns true if the gesture was dispatched successfully.
      */
     suspend fun dispatchGesture(gesture: GestureDescription): Boolean =
-        suspendCancellableCoroutine { continuation ->
-            val callback = object : AccessibilityService.GestureResultCallback() {
-                override fun onCompleted(gestureDescription: GestureDescription) {
-                    if (continuation.isActive) {
-                        continuation.resume(true)
+        withContext(kotlinx.coroutines.Dispatchers.Main) {
+            suspendCancellableCoroutine { continuation ->
+                val callback = object : AccessibilityService.GestureResultCallback() {
+                    override fun onCompleted(gestureDescription: GestureDescription) {
+                        if (continuation.isActive) {
+                            continuation.resume(true)
+                        }
+                    }
+
+                    override fun onCancelled(gestureDescription: GestureDescription) {
+                        Log.w(TAG, "Gesture cancelled")
+                        if (continuation.isActive) {
+                            continuation.resume(false)
+                        }
                     }
                 }
 
-                override fun onCancelled(gestureDescription: GestureDescription) {
-                    Log.w(TAG, "Gesture cancelled")
+                val dispatched = service.dispatchGesture(gesture, callback, handler)
+                if (!dispatched) {
+                    Log.e(TAG, "Failed to dispatch gesture")
                     if (continuation.isActive) {
                         continuation.resume(false)
                     }
-                }
-            }
-
-            val dispatched = service.dispatchGesture(gesture, callback, handler)
-            if (!dispatched) {
-                Log.e(TAG, "Failed to dispatch gesture")
-                if (continuation.isActive) {
-                    continuation.resume(false)
                 }
             }
         }
