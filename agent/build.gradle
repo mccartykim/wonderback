@@ -4,7 +4,6 @@ apply from: "../shared.gradle"
 
 dependencies {
     implementation project(':utils')
-    implementation project(':talkback')
 
     // Networking
     implementation 'com.squareup.okhttp3:okhttp:4.10.0'
@@ -23,6 +22,9 @@ dependencies {
 
 android {
     namespace 'com.google.android.accessibility.talkback.agent'
+    kotlinOptions {
+        jvmTarget = "17"
+    }
     defaultConfig {
         buildConfigField("String", "APPLICATION_ID", '"' + talkbackApplicationId + '"')
     }
