@@ -67,9 +67,10 @@ public class TvSurveyPromptContainer extends FrameLayout {
               getRootView()
                   .findViewById(R.id.preference_root)
                   .setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
-              getRootView()
-                  .findViewById(R.id.action_bar_container)
-                  .setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+              // TODO(wonderback-47): action_bar_container resource missing in phone builds
+              // getRootView()
+              //     .findViewById(R.id.action_bar_container)
+              //     .setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
             }
           }
         });
@@ -90,9 +91,10 @@ public class TvSurveyPromptContainer extends FrameLayout {
       getRootView()
           .findViewById(R.id.preference_root)
           .setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-      getRootView()
-          .findViewById(R.id.action_bar_container)
-          .setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+      // TODO(wonderback-47): action_bar_container resource missing in phone builds
+      // getRootView()
+      //     .findViewById(R.id.action_bar_container)
+      //     .setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
     }
     return hasSetFocus;
   }
