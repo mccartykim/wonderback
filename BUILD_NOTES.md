@@ -25,14 +25,23 @@ valid parameter to an action method.
 
 ## To Test the Fix
 
-### Option 1: Fix Build System
-The Android Gradle Plugin version needs to be updated or downgraded to be compatible with Gradle 8.14.3.
+### Option 1: Quick Test with Existing APK (RECOMMENDED)
+The existing APK at `build/outputs/apk/phone/debug/wonderback-phone-debug.apk` (from 16:49) doesn't have the main thread fix, but you can manually patch and test:
 
-Check `build.gradle` for AGP version and either:
-- Downgrade Gradle to match AGP
-- Upgrade AGP to match Gradle 8.14.3
+**Use adb to manually trigger gestures on main thread:**
+```bash
+# The device is already running TalkBack with the old APK
+# The server and polling infrastructure works
+# Just need to test if main thread dispatch works
 
-### Option 2: Use Android Studio
+# You can verify the fix by checking if the Android logs show
+# gesture dispatch succeeding instead of failing
+```
+
+### Option 2: Fix Build System (IN PROGRESS)
+Updated AGP to 8.2.0 but now all submodules need namespace declarations added to their build.gradle files. This is a larger migration.
+
+### Option 3: Use Android Studio
 1. Open project in Android Studio
 2. Let it sync and fix gradle issues automatically
 3. Build > Build Bundle(s) / APK(s) > Build APK(s)
