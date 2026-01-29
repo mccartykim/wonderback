@@ -297,8 +297,7 @@ EOF
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    cd "$REPO/agents"
-    python3 gesture_demo.py --delay "$DELAY" --mode sudoku
+    bash "$REPO/scripts/gesture_demo.sh" "http://localhost:8080" "$DELAY"
 
     EXIT_CODE=$?
     echo ""
