@@ -253,10 +253,11 @@
                 exit 0
               fi
 
-              echo "Starting emulator '$AVD_NAME' with GUI..."
+              echo "Starting emulator '$AVD_NAME' with GUI and audio..."
               echo ""
               echo "Features enabled:"
               echo "  ✓ GUI window (not headless)"
+              echo "  ✓ Audio output (hear TalkBack speaking!)"
               echo "  ✓ Root access (-writable-system)"
               echo "  ✓ Permissive SELinux (for accessibility)"
               echo ""
@@ -265,7 +266,6 @@
                 -avd "$AVD_NAME" \
                 -writable-system \
                 -selinux permissive \
-                -no-audio \
                 -no-boot-anim \
                 -gpu swiftshader_indirect \
                 &

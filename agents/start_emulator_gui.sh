@@ -41,11 +41,12 @@ if adb devices | grep -q "emulator"; then
     exit 0
 fi
 
-echo "Starting emulator '$AVD_NAME' with GUI..."
+echo "Starting emulator '$AVD_NAME' with GUI and audio..."
 echo ""
 echo "Emulator window will open shortly."
 echo "Features enabled:"
 echo "  ✓ GUI window (not headless)"
+echo "  ✓ Audio output (hear TalkBack speaking!)"
 echo "  ✓ Root access (-writable-system)"
 echo "  ✓ Permissive SELinux (for accessibility)"
 echo ""
@@ -53,14 +54,14 @@ echo "This will run in the background."
 echo "To stop: adb emu kill"
 echo ""
 
-# Start emulator with GUI
+# Start emulator with GUI and audio
 # -no-window is removed to show GUI
 # -writable-system and -selinux permissive for root access
+# Audio enabled so you hear TalkBack speaking!
 "$ANDROID_HOME/emulator/emulator" \
     -avd "$AVD_NAME" \
     -writable-system \
     -selinux permissive \
-    -no-audio \
     -no-boot-anim \
     -gpu swiftshader_indirect \
     &

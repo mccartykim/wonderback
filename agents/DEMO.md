@@ -26,12 +26,13 @@ nix run .#demo
 ./agents/demo.sh
 ```
 
-**That's it!** Watch the GUI window to see:
-- 🖱️ Agent tapping cells
-- 📱 Number picker dialogs opening
-- 🗣️ TalkBack announcements (bottom of screen)
-- ✅ Numbers being entered
-- 🤖 Real-time logs showing what the agent "sees"
+**That's it!** Watch and listen:
+- 👁️ **GUI:** Agent tapping cells
+- 👁️ **GUI:** Number picker dialogs opening
+- 👁️ **GUI:** TalkBack announcements (bottom of screen)
+- 🔊 **AUDIO:** Hear TalkBack speaking the announcements!
+- ✅ **GUI:** Numbers being entered
+- 🤖 **Terminal:** Real-time logs showing what the agent "sees"
 
 ---
 
@@ -72,6 +73,15 @@ Found number 5 button at (540, 1059)
   - "Number 5 button"
   - "5"
   - etc.
+
+### Through Your Speakers 🔊
+- **TalkBack Voice** - You'll HEAR TalkBack speaking:
+  - "Row 1, column 3, empty, editable" (when agent taps cell)
+  - "Number 5 button" (when agent hovers over button)
+  - "5" (when agent selects the number)
+  - Clicking sounds as the agent interacts
+
+**This is the real deal** - same experience a blind user gets with TalkBack!
 
 ---
 
