@@ -64,12 +64,14 @@ public class TvSurveyPromptContainer extends FrameLayout {
           @Override
           public void onChildViewRemoved(View parent, View child) {
             if (hasSetFocus && TvSurveyPromptContainer.this.getChildCount() == 0) {
-              getRootView()
-                  .findViewById(R.id.preference_root)
-                  .setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
-              getRootView()
-                  .findViewById(R.id.action_bar_container)
-                  .setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+              View preferenceRoot = getRootView().findViewById(R.id.preference_root);
+              if (preferenceRoot != null) {
+                preferenceRoot.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+              }
+              View actionBarContainer = getRootView().findViewById(android.R.id.content);
+              if (actionBarContainer != null) {
+                actionBarContainer.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+              }
             }
           }
         });
@@ -87,12 +89,14 @@ public class TvSurveyPromptContainer extends FrameLayout {
     }
     if (view.requestFocus()) {
       hasSetFocus = true;
-      getRootView()
-          .findViewById(R.id.preference_root)
-          .setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-      getRootView()
-          .findViewById(R.id.action_bar_container)
-          .setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+      View preferenceRoot = getRootView().findViewById(R.id.preference_root);
+      if (preferenceRoot != null) {
+        preferenceRoot.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+      }
+      View actionBarContainer = getRootView().findViewById(android.R.id.content);
+      if (actionBarContainer != null) {
+        actionBarContainer.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+      }
     }
     return hasSetFocus;
   }
