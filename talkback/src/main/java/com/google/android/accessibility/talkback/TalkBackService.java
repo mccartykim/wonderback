@@ -79,13 +79,14 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import androidx.annotation.VisibleForTesting;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
-import com.google.android.accessibility.braille.brailledisplay.BrailleDisplay;
-import com.google.android.accessibility.braille.interfaces.BrailleImeForTalkBack;
-import com.google.android.accessibility.braille.interfaces.ScreenReaderActionPerformer;
-import com.google.android.accessibility.braille.interfaces.TalkBackForBrailleCommon;
-import com.google.android.accessibility.braille.interfaces.TalkBackForBrailleIme;
-import com.google.android.accessibility.braille.interfaces.TalkBackForBrailleIme.BrailleImeForTalkBackProvider;
-import com.google.android.accessibility.brailleime.BrailleIme;
+// TODO(wonderback-49): Braille disabled for agent MVP
+// import com.google.android.accessibility.braille.brailledisplay.BrailleDisplay;
+// import com.google.android.accessibility.braille.interfaces.BrailleImeForTalkBack;
+// import com.google.android.accessibility.braille.interfaces.ScreenReaderActionPerformer;
+// import com.google.android.accessibility.braille.interfaces.TalkBackForBrailleCommon;
+// import com.google.android.accessibility.braille.interfaces.TalkBackForBrailleIme;
+// import com.google.android.accessibility.braille.interfaces.TalkBackForBrailleIme.BrailleImeForTalkBackProvider;
+// import com.google.android.accessibility.brailleime.BrailleIme;
 import com.google.android.accessibility.talkback.Feedback.DeviceInfo.Action;
 import com.google.android.accessibility.talkback.PrimesController.TimerAction;
 import com.google.android.accessibility.talkback.TalkBackExitController.TrainingState;
@@ -121,11 +122,12 @@ import com.google.android.accessibility.talkback.actor.search.UniversalSearchAct
 import com.google.android.accessibility.talkback.actor.search.UniversalSearchManager;
 import com.google.android.accessibility.talkback.actor.voicecommands.SpeechRecognizerActor;
 import com.google.android.accessibility.talkback.actor.voicecommands.VoiceCommandProcessor;
-import com.google.android.accessibility.talkback.braille.BrailleHelper;
-import com.google.android.accessibility.talkback.braille.TalkBackForBrailleCommonImpl;
-import com.google.android.accessibility.talkback.braille.TalkBackForBrailleDisplayImpl;
-import com.google.android.accessibility.talkback.braille.TalkBackForBrailleImeImpl;
-import com.google.android.accessibility.talkback.braille.TalkBackForBrailleImeImpl.TalkBackPrivateMethodProvider;
+// TODO(wonderback-49): Braille disabled for agent MVP
+// import com.google.android.accessibility.talkback.braille.BrailleHelper;
+// import com.google.android.accessibility.talkback.braille.TalkBackForBrailleCommonImpl;
+// import com.google.android.accessibility.talkback.braille.TalkBackForBrailleDisplayImpl;
+// import com.google.android.accessibility.talkback.braille.TalkBackForBrailleImeImpl;
+// import com.google.android.accessibility.talkback.braille.TalkBackForBrailleImeImpl.TalkBackPrivateMethodProvider;
 import com.google.android.accessibility.talkback.compositor.Compositor;
 import com.google.android.accessibility.talkback.compositor.CompositorUtils;
 import com.google.android.accessibility.talkback.compositor.EventFilter;
@@ -652,8 +654,9 @@ public class TalkBackService extends AccessibilityService
   private ProcessorEventQueue processorEventQueue;
   private ProcessorPhoneticLetters processorPhoneticLetters;
 
-  private BrailleDisplay brailleDisplay;
-  private BrailleImeForTalkBackProvider brailleImeForTalkBackProvider;
+  // TODO(wonderback-49): Braille disabled for agent MVP
+  // private BrailleDisplay brailleDisplay;
+  // private BrailleImeForTalkBackProvider brailleImeForTalkBackProvider;
 
   private GestureShortcutMapping gestureShortcutMapping;
   private NodeMenuRuleProcessor nodeMenuRuleProcessor;
@@ -912,9 +915,10 @@ public class TalkBackService extends AccessibilityService
     accessibilityEventProcessor.onAccessibilityEvent(event, eventId);
     perf.onHandlerDone(eventId);
 
-    if (brailleDisplay != null) {
-      brailleDisplay.onAccessibilityEvent(event);
-    }
+    // TODO(wonderback-49): Braille disabled for agent MVP
+    // if (brailleDisplay != null) {
+    //   brailleDisplay.onAccessibilityEvent(event);
+    // }
 
     // Re-apply diagnosis-mode logging, in case other accessibility-services changed the shared
     // log-level preference.
@@ -1000,9 +1004,10 @@ public class TalkBackService extends AccessibilityService
 
   /** Handles a key event and returns whether it should be considered consumed. */
   protected boolean onKeyEventInternal(KeyEvent keyEvent) {
-    if (brailleDisplay.onKeyEvent(keyEvent)) {
-      return true;
-    }
+    // TODO(wonderback-49): Braille disabled for agent MVP
+    // if (brailleDisplay.onKeyEvent(keyEvent)) {
+    //   return true;
+    // }
 
     int keyCode = keyEvent.getKeyCode();
     int keyAction = keyEvent.getAction();
@@ -1015,9 +1020,10 @@ public class TalkBackService extends AccessibilityService
     }
     boolean passThroughThisKey = false;
     if (keyAction == KeyEvent.ACTION_DOWN) {
+      // TODO(wonderback-49): Braille disabled for agent MVP
       boolean handleVolumeKeyInTalkBack =
           isTouchInteracting
-              || isBrailleImeTouchInteracting()
+              // || isBrailleImeTouchInteracting()
               || pipeline.getActorState().getContinuousRead().isActive();
       switch (keyCode) {
         case KeyEvent.KEYCODE_VOLUME_DOWN:
@@ -1092,9 +1098,10 @@ public class TalkBackService extends AccessibilityService
     return false;
   }
 
-  private boolean isBrailleImeTouchInteracting() {
-    return getBrailleImeForTalkBack() != null && getBrailleImeForTalkBack().isTouchInteracting();
-  }
+  // TODO(wonderback-49): Braille disabled for agent MVP
+  // private boolean isBrailleImeTouchInteracting() {
+  //   return getBrailleImeForTalkBack() != null && getBrailleImeForTalkBack().isTouchInteracting();
+  // }
 
   @Override
   protected boolean onGesture(int gestureId) {
@@ -1756,7 +1763,8 @@ public class TalkBackService extends AccessibilityService
                 universalSearchActor,
                 geminiActor,
                 this::requestServiceFlag,
-                () -> brailleDisplay.switchBrailleDisplayOnOrOff()),
+                // TODO(wonderback-49): Braille disabled for agent MVP
+                null), // () -> brailleDisplay.switchBrailleDisplayOnOrOff()),
             proximitySensorListener,
             speechController,
             diagnosticOverlayController,
@@ -2011,51 +2019,52 @@ public class TalkBackService extends AccessibilityService
       onTelevisionNavigationControllerInitialized(televisionNavigationController);
     }
 
-    ScreenReaderActionPerformer screenReaderActionPerformer =
-        new BrailleHelper(
-            this,
-            pipeline.getFeedbackReturner(),
-            pipeline.getActorState(),
-            menuManager,
-            selectorController,
-            focusFinder);
-
-    TalkBackForBrailleCommon talkBackForBrailleCommon =
-        new TalkBackForBrailleCommonImpl(this, pipeline.getFeedbackReturner());
-
-    brailleDisplay =
-        new BrailleDisplay(
-            this,
-            new TalkBackForBrailleDisplayImpl(
-                this, pipeline.getFeedbackReturner(), screenReaderActionPerformer),
-            talkBackForBrailleCommon,
-            () ->
-                getBrailleImeForTalkBack() == null
-                    ? null
-                    : getBrailleImeForTalkBack().getBrailleImeForBrailleDisplay());
-
-    TalkBackForBrailleIme talkBackForBrailleIme =
-        new TalkBackForBrailleImeImpl(
-            this,
-            pipeline.getFeedbackReturner(),
-            dimScreenController,
-            proximitySensorListener,
-            new TalkBackPrivateMethodProvider() {
-              @Override
-              public void requestTouchExploration(boolean enabled) {
-                getInstance().requestTouchExploration(enabled);
-              }
-
-              @Override
-              public GlobalVariables getGlobalVariables() {
-                return globalVariables;
-              }
-            },
-            screenReaderActionPerformer,
-            selectorController);
-    brailleImeForTalkBackProvider = talkBackForBrailleIme.getBrailleImeForTalkBackProvider();
-
-    BrailleIme.initialize(this, talkBackForBrailleIme, talkBackForBrailleCommon, brailleDisplay);
+    // TODO(wonderback-49): Braille disabled for agent MVP
+    // ScreenReaderActionPerformer screenReaderActionPerformer =
+    //     new BrailleHelper(
+    //         this,
+    //         pipeline.getFeedbackReturner(),
+    //         pipeline.getActorState(),
+    //         menuManager,
+    //         selectorController,
+    //         focusFinder);
+    //
+    // TalkBackForBrailleCommon talkBackForBrailleCommon =
+    //     new TalkBackForBrailleCommonImpl(this, pipeline.getFeedbackReturner());
+    //
+    // brailleDisplay =
+    //     new BrailleDisplay(
+    //         this,
+    //         new TalkBackForBrailleDisplayImpl(
+    //             this, pipeline.getFeedbackReturner(), screenReaderActionPerformer),
+    //         talkBackForBrailleCommon,
+    //         () ->
+    //             getBrailleImeForTalkBack() == null
+    //                 ? null
+    //                 : getBrailleImeForTalkBack().getBrailleImeForBrailleDisplay());
+    //
+    // TalkBackForBrailleIme talkBackForBrailleIme =
+    //     new TalkBackForBrailleImeImpl(
+    //         this,
+    //         pipeline.getFeedbackReturner(),
+    //         dimScreenController,
+    //         proximitySensorListener,
+    //         new TalkBackPrivateMethodProvider() {
+    //           @Override
+    //           public void requestTouchExploration(boolean enabled) {
+    //             getInstance().requestTouchExploration(enabled);
+    //           }
+    //
+    //           @Override
+    //           public GlobalVariables getGlobalVariables() {
+    //             return globalVariables;
+    //           }
+    //         },
+    //         screenReaderActionPerformer,
+    //         selectorController);
+    // brailleImeForTalkBackProvider = talkBackForBrailleIme.getBrailleImeForTalkBackProvider();
+    //
+    // BrailleIme.initialize(this, talkBackForBrailleIme, talkBackForBrailleCommon, brailleDisplay);
     analytics.onTalkBackServiceStarted();
 
     TalkbackServiceStateNotifier.getInstance().notifyTalkBackServiceStateChanged(true);
@@ -2073,50 +2082,55 @@ public class TalkBackService extends AccessibilityService
     return windowEventInterpreter;
   }
 
+  // TODO(wonderback-49): Braille disabled for agent MVP
   private final TouchInteractingIndicator touchInteractingIndicator =
       new TouchInteractingIndicator() {
         @Override
         public boolean isTouchInteracting() {
-          return isBrailleImeTouchInteracting();
+          // return isBrailleImeTouchInteracting();
+          return false;
         }
       };
 
+  // TODO(wonderback-49): Braille disabled for agent MVP
   private final SelectorController.SelectorEventNotifier selectorEventNotifier =
       new SelectorEventNotifier() {
         @Override
         public void onSelectorOverlayShown(CharSequence message) {
-          if (brailleDisplay != null) {
-            brailleDisplay.onReadingControlChanged(message);
-          }
+          // if (brailleDisplay != null) {
+          //   brailleDisplay.onReadingControlChanged(message);
+          // }
         }
       };
 
+  // TODO(wonderback-49): Braille disabled for agent MVP
   private final DimScreenNotifier dimScreenNotifier =
       new DimScreenNotifier() {
         @Override
         public void onScreenDim() {
-          if (getBrailleImeForTalkBack() != null) {
-            getBrailleImeForTalkBack().onScreenDim();
-          }
+          // if (getBrailleImeForTalkBack() != null) {
+          //   getBrailleImeForTalkBack().onScreenDim();
+          // }
         }
 
         @Override
         public void onScreenBright() {
-          if (getBrailleImeForTalkBack() != null) {
-            getBrailleImeForTalkBack().onScreenBright();
-          }
+          // if (getBrailleImeForTalkBack() != null) {
+          //   getBrailleImeForTalkBack().onScreenBright();
+          // }
         }
       };
 
-  private BrailleImeForTalkBack getBrailleImeForTalkBack() {
-    return brailleImeForTalkBackProvider.getBrailleImeForTalkBack();
-  }
-
-  private boolean isBrailleKeyboardActivated() {
-    return getBrailleImeForTalkBack() == null
-        ? false
-        : getBrailleImeForTalkBack().isBrailleKeyboardActivated();
-  }
+  // TODO(wonderback-49): Braille disabled for agent MVP
+  // private BrailleImeForTalkBack getBrailleImeForTalkBack() {
+  //   return brailleImeForTalkBackProvider.getBrailleImeForTalkBack();
+  // }
+  //
+  // private boolean isBrailleKeyboardActivated() {
+  //   return getBrailleImeForTalkBack() == null
+  //       ? false
+  //       : getBrailleImeForTalkBack().isBrailleKeyboardActivated();
+  // }
 
   @Compositor.Flavor
   public int getCompositorFlavor() {
@@ -2312,10 +2326,11 @@ public class TalkBackService extends AccessibilityService
 
     gestureDetectionFeatureFlag = FeatureFlagReader.useTalkbackGestureDetection(this);
 
-    if (getBrailleImeForTalkBack() != null) {
-      getBrailleImeForTalkBack().onTalkBackResumed();
-    }
-    brailleDisplay.start();
+    // TODO(wonderback-49): Braille disabled for agent MVP
+    // if (getBrailleImeForTalkBack() != null) {
+    //   getBrailleImeForTalkBack().onTalkBackResumed();
+    // }
+    // brailleDisplay.start();
 
     if (eventLatencyLogger != null) {
       Performance.getInstance().addLatencyTracker(eventLatencyLogger);
@@ -2436,10 +2451,11 @@ public class TalkBackService extends AccessibilityService
 
     TalkbackServiceStateNotifier.getInstance().notifyTalkBackServiceStateChanged(false);
 
-    if (getBrailleImeForTalkBack() != null) {
-      getBrailleImeForTalkBack().onTalkBackSuspended();
-    }
-    brailleDisplay.stop();
+    // TODO(wonderback-49): Braille disabled for agent MVP
+    // if (getBrailleImeForTalkBack() != null) {
+    //   getBrailleImeForTalkBack().onTalkBackSuspended();
+    // }
+    // brailleDisplay.stop();
     if (eventLatencyLogger != null) {
       Performance.getInstance().removeLatencyTracker(eventLatencyLogger);
       speechController.getFailoverTts().removeListener(eventLatencyLogger);
@@ -2623,7 +2639,8 @@ public class TalkBackService extends AccessibilityService
     globalVariables.setInterpretAsEntryKey(
         accessibilityFocusInterpreter.getTypingMethod() == FORCE_LIFT_TO_TYPE_ON_IME);
 
-    if (supportsTouchScreen && !isBrailleKeyboardActivated()) {
+    // TODO(wonderback-49): Braille disabled for agent MVP
+    if (supportsTouchScreen) { // && !isBrailleKeyboardActivated()) {
       // Touch exploration *must* be enabled on TVs for TalkBack to function.
       final boolean touchExploration =
           (formFactorUtils.isAndroidTv()
@@ -3286,9 +3303,10 @@ public class TalkBackService extends AccessibilityService
 
   private void resetTouchExplorePassThrough() {
     if (FeatureSupport.supportPassthrough()) {
-      if (isBrailleKeyboardActivated()) {
-        return;
-      }
+      // TODO(wonderback-49): Braille disabled for agent MVP
+      // if (isBrailleKeyboardActivated()) {
+      //   return;
+      // }
       pipeline
           .getFeedbackReturner()
           .returnFeedback(

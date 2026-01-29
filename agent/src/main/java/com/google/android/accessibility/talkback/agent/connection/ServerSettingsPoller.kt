@@ -90,6 +90,8 @@ class ServerSettingsPoller(
                 if (config.triggerMode != mode) {
                     config.triggerMode = mode
                     Log.i(TAG, "Trigger mode -> $value")
+                } else {
+                    // No change needed
                 }
             } catch (_: IllegalArgumentException) {
                 Log.w(TAG, "Unknown trigger mode: $value")
@@ -109,6 +111,8 @@ class ServerSettingsPoller(
                 if (config.severityFilter != severity) {
                     config.severityFilter = severity
                     Log.i(TAG, "Severity filter -> $value")
+                } else {
+                    // No change needed
                 }
             } catch (_: IllegalArgumentException) {
                 Log.w(TAG, "Unknown severity: $value")

@@ -4,9 +4,10 @@ apply from: "../shared.gradle"
 dependencies {
     implementation project(':proguard')
     implementation project(':utils')
-    implementation project(':brailleime')
-    implementation project(':brailleinterfaces')
-    implementation project(':brailledisplay')
+    // TODO(wonderback-49): Braille modules disabled for agent testing MVP
+    // implementation project(':brailleime')
+    // implementation project(':brailleinterfaces')
+    // implementation project(':brailledisplay')
     implementation project(':agent')
 }
 
