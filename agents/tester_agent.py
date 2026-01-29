@@ -35,13 +35,14 @@ class SudokuCell:
 class TesterAgent:
     """Agent that tries to solve Sudoku using only TalkBack/accessibility context"""
 
-    def __init__(self):
+    def __init__(self, debug_delay: float = 0.0):
         self.grid = [[None for _ in range(9)] for _ in range(9)]
         self.cells: List[SudokuCell] = []
         self.attempts = 0
         self.cells_attempted = 0
         self.cells_filled = 0
         self.failures: List[Dict] = []
+        self.debug_delay = debug_delay  # Delay for demo viewing
 
     def log(self, message: str, level: str = "INFO"):
         """Log with timestamp"""
@@ -151,6 +152,9 @@ class TesterAgent:
         self.log(f"Tapping {cell} at ({center_x}, {center_y})")
         self.run_adb_command(f"input tap {center_x} {center_y}")
         time.sleep(0.5)
+        if self.debug_delay > 0:
+            self.log(f"[DEMO] Cell tapped, waiting {self.debug_delay}s for TalkBack...", "DEBUG")
+            time.sleep(self.debug_delay)
         return True
 
     def select_number(self, number: int) -> bool:
@@ -175,6 +179,9 @@ class TesterAgent:
                 self.log(f"Found number {number} button at ({center_x}, {center_y})")
                 self.run_adb_command(f"input tap {center_x} {center_y}")
                 time.sleep(0.5)
+                if self.debug_delay > 0:
+                    self.log(f"[DEMO] Number {number} selected, waiting {self.debug_delay}s...", "DEBUG")
+                    time.sleep(self.debug_delay)
                 return True
 
         self.log(f"Could not find button for number {number}", "WARN")
@@ -377,5 +384,18 @@ class TesterAgent:
 
 
 if __name__ == "__main__":
-    agent = TesterAgent()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="TalkBack Tester Agent - Sudoku Solver")
+    parser.add_argument(
+        "--debug-delay",
+        type=float,
+        default=0.0,
+        help="Add delay (in seconds) after each action for demo viewing (e.g., 2.0 for 2 second pauses)"
+    )
+    args = parser.parse_args()
+
+    agent = TesterAgent(debug_delay=args.debug_delay)
+    if args.debug_delay > 0:
+        agent.log(f"🎬 Demo mode enabled with {args.debug_delay}s delays", "INFO")
     exit(agent.run())
