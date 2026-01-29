@@ -94,6 +94,8 @@
             echo "  nix run .#test-server          Run Python server tests"
             echo "  nix run .#server               Start analysis server"
             echo "  nix run .#setup-adb            ADB reverse port forwarding"
+            echo "  nix run .#start-emulator       Start emulator with GUI"
+            echo "  nix run .#demo                 Demo: TalkBack agent with GUI"
             echo "  bd --no-db list                Check beads task status"
           '';
         };
@@ -213,6 +215,149 @@
               echo "All done. APKs:"
               cd "$REPO"
               find . -name "*.apk" -newer local.properties
+            '';
+          };
+
+          # Start emulator with GUI for demo viewing
+          start-emulator = pkgs.writeShellApplication {
+            name = "talkback-start-emulator-gui";
+            runtimeInputs = [ androidSdk pkgs.coreutils ];
+            text = ''
+              REPO="''${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+              cd "$REPO"
+
+              export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
+
+              echo "╔═══════════════════════════════════════════════════════╗"
+              echo "║   STARTING ANDROID EMULATOR WITH GUI                 ║"
+              echo "╚═══════════════════════════════════════════════════════╝"
+              echo ""
+
+              AVD_NAME="talkback_test"
+              if ! "$ANDROID_HOME/emulator/emulator" -list-avds 2>/dev/null | grep -q "^$AVD_NAME$"; then
+                echo "❌ AVD '$AVD_NAME' not found!"
+                echo ""
+                echo "Available AVDs:"
+                "$ANDROID_HOME/emulator/emulator" -list-avds 2>/dev/null || echo "  (none)"
+                echo ""
+                echo "To create the AVD, see SETUP.md"
+                exit 1
+              fi
+
+              if adb devices | grep -q "emulator"; then
+                echo "⚠️  Emulator already running!"
+                echo ""
+                adb devices
+                echo ""
+                echo "To stop it first: adb emu kill"
+                exit 0
+              fi
+
+              echo "Starting emulator '$AVD_NAME' with GUI..."
+              echo ""
+              echo "Features enabled:"
+              echo "  ✓ GUI window (not headless)"
+              echo "  ✓ Root access (-writable-system)"
+              echo "  ✓ Permissive SELinux (for accessibility)"
+              echo ""
+
+              "$ANDROID_HOME/emulator/emulator" \
+                -avd "$AVD_NAME" \
+                -writable-system \
+                -selinux permissive \
+                -no-audio \
+                -no-boot-anim \
+                -gpu swiftshader_indirect \
+                &
+
+              EMULATOR_PID=$!
+              echo "Emulator starting (PID: $EMULATOR_PID)..."
+              echo "Waiting for boot..."
+
+              timeout=60
+              count=0
+              until adb shell getprop sys.boot_completed 2>/dev/null | grep -q "1"; do
+                if [ $count -ge $timeout ]; then
+                  echo "❌ Timeout waiting for emulator"
+                  exit 1
+                fi
+                echo -n "."
+                sleep 1
+                count=$((count + 1))
+              done
+              echo ""
+
+              echo "✅ Emulator is ready!"
+              adb root
+              sleep 2
+              echo ""
+              echo "Next: nix run .#demo"
+            '';
+          };
+
+          # Run TalkBack tester agent demo with GUI and delays
+          demo = pkgs.writeShellApplication {
+            name = "talkback-demo";
+            runtimeInputs = [ androidSdk pythonEnv pkgs.coreutils ];
+            text = ''
+              REPO="''${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+              cd "$REPO"
+
+              export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
+
+              DELAY="''${1:-2.0}"
+
+              echo "╔═══════════════════════════════════════════════════════╗"
+              echo "║    TALKBACK TESTER AGENT - DEMO MODE                 ║"
+              echo "╚═══════════════════════════════════════════════════════╝"
+              echo ""
+              echo "Demo with ''${DELAY}s delays for viewing"
+              echo ""
+              echo "Watch the GUI window to see:"
+              echo "  - Agent tapping cells"
+              echo "  - Number picker dialogs"
+              echo "  - TalkBack announcements"
+              echo ""
+
+              if ! adb devices | grep -q "emulator"; then
+                echo "❌ No emulator detected!"
+                echo ""
+                echo "Start emulator first: nix run .#start-emulator"
+                exit 1
+              fi
+
+              echo "✓ Emulator detected"
+              echo ""
+
+              echo "🎮 Launching Sudoku app..."
+              adb shell am force-stop com.wonderback.sudoku.debug 2>/dev/null || true
+              sleep 1
+              adb shell am start -n com.wonderback.sudoku.debug/com.wonderback.sudoku.MainActivity
+              sleep 2
+              echo ""
+
+              echo "🤖 Starting Tester Agent with ''${DELAY}s demo delays..."
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo ""
+
+              cd "$REPO/agents"
+              python3 tester_agent.py --debug-delay "$DELAY"
+
+              EXIT_CODE=$?
+              echo ""
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+              if [ $EXIT_CODE -eq 0 ]; then
+                echo "✅ Demo complete! Agent solved the puzzle!"
+              else
+                echo "ℹ️  Demo complete! (Expected MVP behavior)"
+              fi
+
+              echo ""
+              echo "To run again: nix run .#demo [delay-seconds]"
+              echo "Examples:"
+              echo "  nix run .#demo 3.0    # Slower (better for presenting)"
+              echo "  nix run .#demo 1.0    # Faster"
             '';
           };
         };
