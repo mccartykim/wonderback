@@ -41,28 +41,29 @@ allprojects {
 
 android {
     defaultConfig {
-        applicationId talkbackApplicationId
-        versionName talkbackVersionName + "-" + BUILD_TIMESTAMP
-        minSdkVersion 26
-        targetSdkVersion 30
-        testInstrumentationRunner 'android.test.InstrumentationTestRunner'
-        multiDexEnabled true
+        applicationId = talkbackApplicationId
+        versionName = talkbackVersionName + "-" + BUILD_TIMESTAMP
+        minSdkVersion = 26
+        targetSdkVersion = 30
+        testInstrumentationRunner = 'android.test.InstrumentationTestRunner'
+        multiDexEnabled = true
     }
-    packagingOptions {
-        exclude 'LICENSE'
-        exclude 'README'
+    packaging {
+        resources {
+            excludes += ['LICENSE', 'README']
+        }
     }
-    lintOptions {
-        checkReleaseBuilds false
-        abortOnError false
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
     productFlavors {
         phone {
-            dimension "target"
+            dimension = "target"
         }
         wear {
-            dimension "target"
-            versionNameSuffix "-wear"
+            dimension = "target"
+            versionNameSuffix = "-wear"
         }
     }
 }

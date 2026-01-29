@@ -31,9 +31,9 @@
 
         androidSdk = androidComposition.androidsdk;
 
-        # Gradle 7.6.6 — matches what build.sh downloads (7.6.4).
-        # AGP 7.2.2 requires Gradle 7.3.3+; gradle_7 is 7.6.6.
-        gradle = pkgs.gradle_7;
+        # Gradle 8.14.3 — upgraded from 7.6.6 (no longer receives security updates).
+        # AGP 7.2.2 requires Gradle 7.3.3+; gradle_8 is 8.14.3.
+        gradle = pkgs.gradle_8;
 
         # Python environment for the analysis server
         pythonEnv = pkgs.python312.withPackages (ps: with ps; [
