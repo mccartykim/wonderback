@@ -1,20 +1,24 @@
 // For building the open-source release of TalkBack.
 
 ext {
-    talkbackApplicationId = "com.android.talkback"
+    // Use unique namespace to avoid conflict with system TalkBack
+    talkbackApplicationId = "com.wonderback.talkback"
 }
 
 android {
-    compileSdkVersion 34
+    buildFeatures {
+        buildConfig = true
+    }
+    compileSdkVersion = 34
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
     defaultConfig {
         buildConfigField "String", "APPLICATION_ID", "\"" + talkbackApplicationId + "\""
         vectorDrawables.useSupportLibrary = true
-        multiDexEnabled true
-        minSdkVersion 26
+        multiDexEnabled = true
+        minSdkVersion = 26
         ndk {
             abiFilters "armeabi-v7a", "arm64-v8a"
         }
@@ -22,10 +26,10 @@ android {
     flavorDimensions "target"
     productFlavors {
         phone {
-            dimension "target"
+            dimension = "target"
         }
         wear {
-            dimension "target"
+            dimension = "target"
         }
     }
 }

@@ -62,7 +62,8 @@
         android:required="false" />
 
     <application
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config">
 
         <!-- TalkBack -->
         <service

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.google.android.accessibility.talkback.agent">
+
+    <!-- Network access for agent server communication -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- Foreground service for persistent agent connection -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- For mDNS/NSD service discovery -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
+    <!-- Notifications for analysis results -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <!-- Agent Client Service - manages connection to macOS server -->
+        <service
+            android:name="com.google.android.accessibility.talkback.agent.service.AgentClientService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
+        <!-- Agent Settings Activity -->
+        <activity
+            android:name="com.google.android.accessibility.talkback.agent.ui.AgentSettingsActivity"
+            android:exported="false"
+            android:label="Agent Settings"
+            android:theme="@style/Theme.AppCompat.Light.DarkActionBar" />
+
+        <!-- Issue Detail Activity -->
+        <activity
+            android:name="com.google.android.accessibility.talkback.agent.ui.IssueListActivity"
+            android:exported="false"
+            android:label="Accessibility Issues"
+            android:theme="@style/Theme.AppCompat.Light.DarkActionBar" />
+    </application>
+</manifest>
